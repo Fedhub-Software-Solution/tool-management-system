@@ -147,22 +147,57 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateProject = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    console.log('=== handleCreateProject called ===');
+    console.log('Event:', e);
+    console.log('Event type:', e?.type);
+    console.log('Form data:', formData);
+    console.log('Dialog open state:', isDialogOpen);
+    
     setIsLoading(true);
     setError(null);
     
     try {
+      // HTML date input already provides YYYY-MM-DD format, use directly
+      // Don't send status - backend will default to "Active" and the enum might have different casing
       const newProjectData = {
-        customerPO: formData.customerPO,
-        partNumber: formData.partNumber,
-        toolNumber: formData.toolNumber,
+        customerPO: formData.customerPO.trim(),
+        partNumber: formData.partNumber.trim(),
+        toolNumber: formData.toolNumber.trim(),
         price: parseFloat(formData.price),
-        targetDate: formData.targetDate,
-        status: "Active",
+        targetDate: formData.targetDate, // Already in YYYY-MM-DD format from HTML date input
+        // Status will be set by backend (defaults to Active)
       };
 
+      console.log('=== Creating project ===');
+      console.log('Project data to send:', newProjectData);
+
+      // Validate required fields
+      if (!newProjectData.customerPO || !newProjectData.partNumber || !newProjectData.toolNumber || !newProjectData.price || !newProjectData.targetDate) {
+        console.error('Validation failed: Missing required fields');
+        throw new Error('Please fill in all required fields');
+      }
+
+      if (isNaN(newProjectData.price) || newProjectData.price <= 0) {
+        console.error('Validation failed: Invalid price');
+        throw new Error('Please enter a valid price');
+      }
+
+      // Validate date format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(newProjectData.targetDate)) {
+        console.error('Validation failed: Invalid date format', newProjectData.targetDate);
+        throw new Error('Invalid date format');
+      }
+
+      console.log('Validation passed, calling API...');
       const createdProject = await apiService.createProject(newProjectData);
+      console.log('Project created successfully:', createdProject);
+      
       const transformedProject = transformProject(createdProject);
       
       // Refresh the displayed list and parent projects for Dashboard
@@ -184,8 +219,10 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
         price: "",
         targetDate: "",
       });
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create project';
+      setError(errorMessage);
       console.error('Error creating project:', err);
     } finally {
       setIsLoading(false);
@@ -201,15 +238,33 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
     setError(null);
     
     try {
+      // HTML date input already provides YYYY-MM-DD format, use directly
       const updateData = {
-        customerPO: formData.customerPO,
-        partNumber: formData.partNumber,
-        toolNumber: formData.toolNumber,
+        customerPO: formData.customerPO.trim(),
+        partNumber: formData.partNumber.trim(),
+        toolNumber: formData.toolNumber.trim(),
         price: parseFloat(formData.price),
-        targetDate: formData.targetDate,
+        targetDate: formData.targetDate, // Already in YYYY-MM-DD format from HTML date input
       };
 
-      await apiService.updateProject(selectedProject.id, updateData);
+      console.log('Updating project with data:', { id: selectedProject.id, ...updateData });
+
+      // Validate required fields
+      if (!updateData.customerPO || !updateData.partNumber || !updateData.toolNumber || updateData.price === undefined || !updateData.targetDate) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      if (isNaN(updateData.price) || updateData.price <= 0) {
+        throw new Error('Please enter a valid price');
+      }
+
+      // Validate date format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(updateData.targetDate)) {
+        throw new Error('Invalid date format');
+      }
+
+      const updatedProject = await apiService.updateProject(selectedProject.id, updateData);
+      console.log('Project updated successfully:', updatedProject);
       
       // Refresh the displayed list and parent projects for Dashboard
       await fetchProjects();
@@ -223,6 +278,7 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
       }
       
       setIsEditDialogOpen(false);
+      setSelectedProject(null);
       setFormData({
         customerPO: "",
         partNumber: "",
@@ -230,8 +286,10 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
         price: "",
         targetDate: "",
       });
+      setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update project');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update project';
+      setError(errorMessage);
       console.error('Error updating project:', err);
     } finally {
       setIsLoading(false);
@@ -273,12 +331,20 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
 
   const handleEditClick = (project: Project) => {
     setSelectedProject(project);
+    // Format date for input field (YYYY-MM-DD)
+    const formatDateForInput = (dateString: string) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      return date.toISOString().split('T')[0];
+    };
+    
     setFormData({
-      customerPO: project.customerPO,
-      partNumber: project.partNumber,
-      toolNumber: project.toolNumber,
-      price: project.price.toString(),
-      targetDate: project.targetDate,
+      customerPO: project.customerPO || '',
+      partNumber: project.partNumber || '',
+      toolNumber: project.toolNumber || '',
+      price: project.price ? project.price.toString() : '',
+      targetDate: formatDateForInput(project.targetDate),
     });
     setIsEditDialogOpen(true);
   };
@@ -702,13 +768,40 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
               </Box>
 
               {/* Right Side: Create Button */}
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg text-[11px] py-1.5 px-4 h-8 whitespace-nowrap">
-                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                    Create Project
-                  </Button>
-                </DialogTrigger>
+              <Button 
+                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg text-[11px] py-1.5 px-4 h-8 whitespace-nowrap"
+                onClick={() => {
+                  console.log('=== Create Project button clicked ===');
+                  console.log('Opening dialog...');
+                  setIsDialogOpen(true);
+                }}
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Create Projectaaa
+              </Button>
+              
+              <Dialog 
+                open={isDialogOpen} 
+                onOpenChange={(open) => {
+                  console.log('=== Dialog onOpenChange called ===', open);
+                  setIsDialogOpen(open);
+                  if (open) {
+                    console.log('✅ Dialog opened - form should be ready');
+                    console.log('Current formData:', formData);
+                  }
+                  if (!open) {
+                    console.log('Dialog closed - resetting form');
+                    setFormData({
+                      customerPO: "",
+                      partNumber: "",
+                      toolNumber: "",
+                      price: "",
+                      targetDate: "",
+                    });
+                    setError(null);
+                  }
+                }}
+              >
                 <DialogContent className="max-w-2xl">
                   <DialogHeader>
                     <DialogTitle>Create New Project</DialogTitle>
@@ -716,7 +809,22 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                       Create a new project for customer purchase order
                     </DialogDescription>
                   </DialogHeader>
-                  <form onSubmit={handleCreateProject} className="space-y-4">
+                  {error && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                      <p className="text-sm text-red-700">{error}</p>
+                    </div>
+                  )}
+                  <form 
+                    onSubmit={(e) => {
+                      console.log('Form submit event triggered');
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleCreateProject(e);
+                    }} 
+                    className="space-y-4"
+                    noValidate
+                    id="create-project-form"
+                  >
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="customerPO">Customer PO Number</Label>
@@ -728,6 +836,7 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                           }
                           placeholder="PO-2024-001"
                           required
+                          disabled={isLoading}
                         />
                       </div>
                       <div className="space-y-2">
@@ -740,6 +849,7 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                           }
                           placeholder="PN-12345"
                           required
+                          disabled={isLoading}
                         />
                       </div>
                     </div>
@@ -755,10 +865,11 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                           }
                           placeholder="TN-67890"
                           required
+                          disabled={isLoading}
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="price">Price ($)</Label>
+                        <Label htmlFor="price">Price (₹)</Label>
                         <Input
                           id="price"
                           type="number"
@@ -769,32 +880,74 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                           }
                           placeholder="50000.00"
                           required
+                          disabled={isLoading}
                         />
                       </div>
                     </div>
 
                     <div className="space-y-2">
                       <Label htmlFor="targetDate">Target Date</Label>
-                      <Input
-                        id="targetDate"
-                        type="date"
-                        value={formData.targetDate}
-                        onChange={(e) =>
-                          setFormData({ ...formData, targetDate: e.target.value })
-                        }
-                        required
-                      />
+                      <div className="relative">
+                        <Input
+                          id="targetDate"
+                          type="date"
+                          value={formData.targetDate}
+                          onChange={(e) =>
+                            setFormData({ ...formData, targetDate: e.target.value })
+                          }
+                          required
+                          className="pr-10"
+                          disabled={isLoading}
+                        />
+                        <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
                     </div>
+                    
+                    {formData.targetDate && (
+                      <div className="text-sm text-muted-foreground">
+                        Selected: {new Date(formData.targetDate + 'T00:00:00').toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </div>
+                    )}
 
                     <div className="flex justify-end gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        onClick={() => setIsDialogOpen(false)}
+                        onClick={() => {
+                          setIsDialogOpen(false);
+                          setError(null);
+                        }}
+                        disabled={isLoading}
                       >
                         Cancel
                       </Button>
-                      <Button type="submit">Create Project</Button>
+                      <Button 
+                        type="button"
+                        disabled={isLoading}
+                        onClick={(e) => {
+                          console.log('=== Submit button clicked directly ===');
+                          e.preventDefault();
+                          e.stopPropagation();
+                          console.log('About to call handleCreateProject');
+                          // Call handler directly
+                          handleCreateProject(e as any).catch(err => {
+                            console.error('Error in handleCreateProject:', err);
+                          });
+                        }}
+                      >
+                        {isLoading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          'Create Project'
+                        )}
+                      </Button>
                     </div>
                   </form>
                 </DialogContent>
@@ -1046,7 +1199,23 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
       </div>
 
       {/* Edit Project Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+      <Dialog 
+        open={isEditDialogOpen} 
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) {
+            setSelectedProject(null);
+            setFormData({
+              customerPO: "",
+              partNumber: "",
+              toolNumber: "",
+              price: "",
+              targetDate: "",
+            });
+            setError(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Project</DialogTitle>
@@ -1054,6 +1223,11 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
               Update project details for {selectedProject?.customerPO}
             </DialogDescription>
           </DialogHeader>
+          {error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-700">{error}</p>
+            </div>
+          )}
           <form onSubmit={handleEditProject} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -1066,6 +1240,7 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                   }
                   placeholder="PO-2024-001"
                   required
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
@@ -1078,6 +1253,7 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                   }
                   placeholder="PN-12345"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -1093,10 +1269,11 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                   }
                   placeholder="TN-67890"
                   required
+                  disabled={isLoading}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="edit-price">Price ($)</Label>
+                <Label htmlFor="edit-price">Price (₹)</Label>
                 <Input
                   id="edit-price"
                   type="number"
@@ -1107,33 +1284,65 @@ export function ProjectList({ projects: parentProjects, setProjects: setParentPr
                   }
                   placeholder="50000.00"
                   required
+                  disabled={isLoading}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="edit-targetDate">Target Date</Label>
-              <Input
-                id="edit-targetDate"
-                type="date"
-                value={formData.targetDate}
-                onChange={(e) =>
-                  setFormData({ ...formData, targetDate: e.target.value })
-                }
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="edit-targetDate"
+                  type="date"
+                  value={formData.targetDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, targetDate: e.target.value })
+                  }
+                  required
+                  className="pr-10"
+                  disabled={isLoading}
+                />
+                <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              </div>
             </div>
+            
+            {formData.targetDate && (
+              <div className="text-sm text-muted-foreground">
+                Selected: {new Date(formData.targetDate + 'T00:00:00').toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setIsEditDialogOpen(false)}
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setSelectedProject(null);
+                  setError(null);
+                }}
+                disabled={isLoading}
               >
                 Cancel
               </Button>
-              <Button type="submit" className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
-                Save Changes
+              <Button 
+                type="submit" 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  'Save Changes'
+                )}
               </Button>
             </div>
           </form>

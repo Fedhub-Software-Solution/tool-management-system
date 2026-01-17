@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -30,8 +30,10 @@ import {
   Grid3x3,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Loader2
 } from "lucide-react";
+import { apiService } from "../services/api";
 import {
   Table,
   TableBody,
@@ -88,7 +90,51 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const itemsPerPage = 10;
+
+  // Transform backend supplier data to frontend format
+  const transformSupplier = (backendSupplier: any): Supplier => {
+    return {
+      id: backendSupplier.id,
+      name: backendSupplier.name || '',
+      code: backendSupplier.supplierCode || '',
+      contactPerson: backendSupplier.contactPerson || '',
+      email: backendSupplier.email || '',
+      phone: backendSupplier.phone || '',
+      address: backendSupplier.address || '',
+      city: backendSupplier.city || '',
+      state: backendSupplier.state || '',
+      pincode: backendSupplier.pincode || '',
+      gstin: backendSupplier.gstin || '',
+      status: backendSupplier.status === 'Active' || backendSupplier.status === 'Inactive' 
+        ? backendSupplier.status 
+        : backendSupplier.status === 'ACTIVE' ? 'Active' : 'Inactive',
+      category: backendSupplier.categories || [],
+      rating: backendSupplier.rating || 0,
+      totalOrders: backendSupplier.totalOrders || 0,
+      createdAt: backendSupplier.createdAt || new Date().toISOString(),
+      notes: backendSupplier.notes || '',
+    };
+  };
+
+  // Refresh suppliers from API after mutations
+  const refreshSuppliers = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await apiService.getSuppliers({ limit: 1000 }); // Get all suppliers
+      const transformedSuppliers = response.data.map(transformSupplier);
+      setSuppliers(transformedSuppliers); // Update parent state
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to refresh suppliers';
+      setError(errorMessage);
+      console.error('Error refreshing suppliers:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string>('code');
@@ -143,50 +189,104 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
     "Chemicals",
   ];
 
-  const handleAddSupplier = () => {
-    const newSupplier: Supplier = {
-      id: `SUP-${Date.now()}`,
+  const handleAddSupplier = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const supplierData = {
+        supplierCode: formData.code!,
       name: formData.name!,
-      code: formData.code!,
-      contactPerson: formData.contactPerson!,
-      email: formData.email!,
-      phone: formData.phone!,
-      address: formData.address!,
-      city: formData.city!,
-      state: formData.state!,
-      pincode: formData.pincode!,
-      gstin: formData.gstin!,
-      status: formData.status!,
-      category: formData.category!,
-      rating: 0,
-      totalOrders: 0,
-      createdAt: new Date().toISOString(),
+        contactPerson: formData.contactPerson,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        gstin: formData.gstin,
+        status: formData.status === 'Active' ? 'Active' : 'Inactive',
+        categories: formData.category || [],
+        rating: formData.rating || 0,
       notes: formData.notes,
     };
 
-    setSuppliers([...suppliers, newSupplier]);
+      await apiService.createSupplier(supplierData);
+      
+      // Refresh suppliers list from API
+      await refreshSuppliers();
     setShowAddDialog(false);
     resetForm();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create supplier';
+      setError(errorMessage);
+      console.error('Error creating supplier:', err);
+      
+      // Show error - backend error messages should be clear
+      alert(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleEditSupplier = () => {
+  const handleEditSupplier = async () => {
     if (!selectedSupplier) return;
 
-    setSuppliers(
-      suppliers.map((s) =>
-        s.id === selectedSupplier.id
-          ? { ...selectedSupplier, ...formData }
-          : s
-      )
-    );
+    setIsLoading(true);
+    setError(null);
+    try {
+      const supplierData = {
+        supplierCode: formData.code,
+        name: formData.name,
+        contactPerson: formData.contactPerson,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        pincode: formData.pincode,
+        gstin: formData.gstin,
+        status: formData.status === 'Active' ? 'Active' : 'Inactive',
+        categories: formData.category || [],
+        rating: formData.rating || 0,
+        notes: formData.notes,
+      };
+
+      await apiService.updateSupplier(selectedSupplier.id, supplierData);
+      
+      // Refresh suppliers list from API
+      await refreshSuppliers();
     setShowEditDialog(false);
     setSelectedSupplier(null);
     resetForm();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update supplier';
+      setError(errorMessage);
+      console.error('Error updating supplier:', err);
+      alert(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDeleteSupplier = (supplierId: string) => {
-    if (window.confirm("Are you sure you want to delete this supplier?")) {
-      setSuppliers(suppliers.filter((s) => s.id !== supplierId));
+  const handleDeleteSupplier = async (supplierId: string) => {
+    if (!window.confirm("Are you sure you want to delete this supplier?")) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      await apiService.deleteSupplier(supplierId);
+      
+      // Refresh suppliers list from API
+      await refreshSuppliers();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete supplier';
+      setError(errorMessage);
+      console.error('Error deleting supplier:', err);
+      alert(errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -788,180 +888,35 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
     );
   }
 
-  const SupplierForm = ({ isEdit = false }: { isEdit?: boolean }) => (
-    <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Supplier Name *</Label>
-          <Input
-            placeholder="Enter supplier name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Supplier Code *</Label>
-          <Input
-            placeholder="Enter supplier code"
-            value={formData.code}
-            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-            className="h-8 text-sm"
-            disabled={isEdit}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Contact Person *</Label>
-          <Input
-            placeholder="Enter contact person name"
-            value={formData.contactPerson}
-            onChange={(e) =>
-              setFormData({ ...formData, contactPerson: e.target.value })
-            }
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Email *</Label>
-          <Input
-            type="email"
-            placeholder="Enter email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Phone *</Label>
-          <Input
-            placeholder="Enter phone number"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">GSTIN *</Label>
-          <Input
-            placeholder="Enter GSTIN"
-            value={formData.gstin}
-            onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs">Address *</Label>
-        <Input
-          placeholder="Enter address"
-          value={formData.address}
-          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          className="h-8 text-sm"
-        />
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">City *</Label>
-          <Input
-            placeholder="City"
-            value={formData.city}
-            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">State *</Label>
-          <Input
-            placeholder="State"
-            value={formData.state}
-            onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Pincode *</Label>
-          <Input
-            placeholder="Pincode"
-            value={formData.pincode}
-            onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-            className="h-8 text-sm"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs">Category *</Label>
-        <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[60px]">
-          {categories.map((cat) => (
-            <Chip
-              key={cat}
-              label={cat}
-              size="small"
-              onClick={() => {
-                const current = formData.category || [];
-                if (current.includes(cat)) {
-                  setFormData({
-                    ...formData,
-                    category: current.filter((c) => c !== cat),
-                  });
-                } else {
-                  setFormData({ ...formData, category: [...current, cat] });
-                }
-              }}
-              color={formData.category?.includes(cat) ? "primary" : "default"}
-              variant={formData.category?.includes(cat) ? "filled" : "outlined"}
-              sx={{ fontSize: "11px", height: "24px" }}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs">Status</Label>
-        <div className="flex gap-3">
-          <Button
-            type="button"
-            size="sm"
-            variant={formData.status === "Active" ? "default" : "outline"}
-            onClick={() => setFormData({ ...formData, status: "Active" })}
-            className="h-8 text-xs"
-          >
-            Active
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant={formData.status === "Inactive" ? "default" : "outline"}
-            onClick={() => setFormData({ ...formData, status: "Inactive" })}
-            className="h-8 text-xs"
-          >
-            Inactive
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-1">
-        <Label className="text-xs">Notes</Label>
-        <Textarea
-          placeholder="Additional notes about the supplier"
-          value={formData.notes}
-          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-          className="text-sm min-h-[60px]"
-        />
-      </div>
-    </div>
-  );
 
   return (
     <div className="space-y-4">
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md flex items-center gap-2">
+          <AlertCircle className="w-5 h-5" />
+          <span>{error}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setError(null)}
+            className="ml-auto h-6 w-6 p-0"
+          >
+            ×
+          </Button>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 flex items-center gap-3">
+            <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+            <span>Processing...</span>
+      </div>
+    </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4">
         <Card className="border-0 shadow-sm bg-purple-50">
@@ -1330,7 +1285,171 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
               Enter the supplier details below. Fields marked with * are required.
             </DialogDescription>
           </DialogHeader>
-          <SupplierForm />
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Supplier Name *</Label>
+                <Input
+                  placeholder="Enter supplier name"
+                  value={formData.name || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Supplier Code *</Label>
+                <Input
+                  placeholder="Enter supplier code"
+                  value={formData.code || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, code: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Contact Person *</Label>
+                <Input
+                  placeholder="Enter contact person name"
+                  value={formData.contactPerson || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, contactPerson: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Email *</Label>
+                <Input
+                  type="email"
+                  placeholder="Enter email"
+                  value={formData.email || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Phone *</Label>
+                <Input
+                  placeholder="Enter phone number"
+                  value={formData.phone || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GSTIN *</Label>
+                <Input
+                  placeholder="Enter GSTIN"
+                  value={formData.gstin || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, gstin: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Address *</Label>
+              <Input
+                placeholder="Enter address"
+                value={formData.address || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
+                className="h-8 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">City *</Label>
+                <Input
+                  placeholder="City"
+                  value={formData.city || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">State *</Label>
+                <Input
+                  placeholder="State"
+                  value={formData.state || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, state: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Pincode *</Label>
+                <Input
+                  placeholder="Pincode"
+                  value={formData.pincode || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, pincode: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Category *</Label>
+              <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[60px]">
+                {categories.map((cat) => (
+                  <Chip
+                    key={cat}
+                    label={cat}
+                    size="small"
+                    onClick={() => {
+                      setFormData((prev) => {
+                        const current = prev.category || [];
+                        if (current.includes(cat)) {
+                          return { ...prev, category: current.filter((c) => c !== cat) };
+                        } else {
+                          return { ...prev, category: [...current, cat] };
+                        }
+                      });
+                    }}
+                    color={formData.category?.includes(cat) ? "primary" : "default"}
+                    variant={formData.category?.includes(cat) ? "filled" : "outlined"}
+                    sx={{ fontSize: "11px", height: "24px" }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={formData.status === "Active" ? "default" : "outline"}
+                  onClick={() => setFormData((prev) => ({ ...prev, status: "Active" }))}
+                  className="h-8 text-xs"
+                >
+                  Active
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={formData.status === "Inactive" ? "default" : "outline"}
+                  onClick={() => setFormData((prev) => ({ ...prev, status: "Inactive" }))}
+                  className="h-8 text-xs"
+                >
+                  Inactive
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea
+                placeholder="Additional notes about the supplier"
+                value={formData.notes || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                className="text-sm min-h-[60px]"
+              />
+            </div>
+          </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button
               variant="outline"
@@ -1345,6 +1464,7 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
             <Button
               onClick={handleAddSupplier}
               disabled={
+                isLoading ||
                 !formData.name ||
                 !formData.code ||
                 !formData.contactPerson ||
@@ -1361,7 +1481,14 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
               size="sm"
               className="bg-gradient-to-r from-blue-500 to-cyan-500"
             >
-              Add Supplier
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Adding...
+                </>
+              ) : (
+                'Add Supplier'
+              )}
             </Button>
           </div>
         </DialogContent>
@@ -1379,7 +1506,172 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
               Update the supplier details below.
             </DialogDescription>
           </DialogHeader>
-          <SupplierForm isEdit />
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Supplier Name *</Label>
+                <Input
+                  placeholder="Enter supplier name"
+                  value={formData.name || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Supplier Code *</Label>
+                <Input
+                  placeholder="Enter supplier code"
+                  value={formData.code || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, code: e.target.value }))}
+                  className="h-8 text-sm"
+                  disabled={true}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Contact Person *</Label>
+                <Input
+                  placeholder="Enter contact person name"
+                  value={formData.contactPerson || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, contactPerson: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Email *</Label>
+                <Input
+                  type="email"
+                  placeholder="Enter email"
+                  value={formData.email || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, email: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Phone *</Label>
+                <Input
+                  placeholder="Enter phone number"
+                  value={formData.phone || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">GSTIN *</Label>
+                <Input
+                  placeholder="Enter GSTIN"
+                  value={formData.gstin || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, gstin: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Address *</Label>
+              <Input
+                placeholder="Enter address"
+                value={formData.address || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
+                className="h-8 text-sm"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">City *</Label>
+                <Input
+                  placeholder="City"
+                  value={formData.city || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, city: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">State *</Label>
+                <Input
+                  placeholder="State"
+                  value={formData.state || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, state: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Pincode *</Label>
+                <Input
+                  placeholder="Pincode"
+                  value={formData.pincode || ""}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, pincode: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Category *</Label>
+              <div className="flex flex-wrap gap-2 p-2 border rounded-md min-h-[60px]">
+                {categories.map((cat) => (
+                  <Chip
+                    key={cat}
+                    label={cat}
+                    size="small"
+                    onClick={() => {
+                      setFormData((prev) => {
+                        const current = prev.category || [];
+                        if (current.includes(cat)) {
+                          return { ...prev, category: current.filter((c) => c !== cat) };
+                        } else {
+                          return { ...prev, category: [...current, cat] };
+                        }
+                      });
+                    }}
+                    color={formData.category?.includes(cat) ? "primary" : "default"}
+                    variant={formData.category?.includes(cat) ? "filled" : "outlined"}
+                    sx={{ fontSize: "11px", height: "24px" }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Status</Label>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={formData.status === "Active" ? "default" : "outline"}
+                  onClick={() => setFormData((prev) => ({ ...prev, status: "Active" }))}
+                  className="h-8 text-xs"
+                >
+                  Active
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={formData.status === "Inactive" ? "default" : "outline"}
+                  onClick={() => setFormData((prev) => ({ ...prev, status: "Inactive" }))}
+                  className="h-8 text-xs"
+                >
+                  Inactive
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea
+                placeholder="Additional notes about the supplier"
+                value={formData.notes || ""}
+                onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
+                className="text-sm min-h-[60px]"
+              />
+            </div>
+          </div>
           <div className="flex justify-end gap-2 mt-4">
             <Button
               variant="outline"
@@ -1395,6 +1687,7 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
             <Button
               onClick={handleEditSupplier}
               disabled={
+                isLoading ||
                 !formData.name ||
                 !formData.contactPerson ||
                 !formData.email ||
@@ -1410,7 +1703,14 @@ export function SupplierManagement({ suppliers, setSuppliers, userRole, prs, pro
               size="sm"
               className="bg-gradient-to-r from-blue-500 to-cyan-500"
             >
-              Save Changes
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
             </Button>
           </div>
         </DialogContent>

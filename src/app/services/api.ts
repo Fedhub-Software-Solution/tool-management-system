@@ -49,10 +49,47 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    console.log('=== API Request ===');
+    console.log('URL:', `${this.baseUrl}${endpoint}`);
+    console.log('Method:', options.method || 'GET');
+    console.log('Headers:', headers);
+    console.log('Body:', options.body);
+
     try {
-      const response = await fetch(`${this.baseUrl}${endpoint}`, {
-        ...options,
-        headers,
+      console.log('Making fetch request...');
+      // Ensure body is properly set and headers are correct - don't let options override headers
+      const fetchOptions: RequestInit = {
+        method: options.method || 'GET',
+        headers: headers,
+      };
+      
+      // Only add body for methods that support it
+      if (options.body) {
+        fetchOptions.body = options.body;
+      }
+      
+      // Copy other safe options
+      if (options.signal) fetchOptions.signal = options.signal;
+      if (options.cache) fetchOptions.cache = options.cache;
+      if (options.credentials) fetchOptions.credentials = options.credentials;
+      if (options.mode) fetchOptions.mode = options.mode;
+      if (options.redirect) fetchOptions.redirect = options.redirect;
+      if (options.referrer) fetchOptions.referrer = options.referrer;
+      
+      console.log('Fetch options being sent:', {
+        method: fetchOptions.method,
+        headers: fetchOptions.headers,
+        hasBody: !!fetchOptions.body,
+        bodyPreview: fetchOptions.body ? String(fetchOptions.body).substring(0, 200) : undefined
+      });
+      
+      const response = await fetch(`${this.baseUrl}${endpoint}`, fetchOptions);
+      
+      console.log('Fetch response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: Object.fromEntries(response.headers.entries())
       });
 
       // Handle 401 Unauthorized - try to refresh token
@@ -68,9 +105,73 @@ class ApiService {
         }
       }
 
+      // Handle 403 Forbidden - try refreshing token first in case it's expired
+      // (Some backends return 403 instead of 401 for expired tokens)
+      if (response.status === 403 && retry) {
+        const token = localStorage.getItem('accessToken');
+        const decodedToken = token ? this.decodeToken(token) : null;
+        
+        console.error('=== 403 Forbidden Error Debug ===');
+        console.error('Endpoint:', endpoint);
+        console.error('Current user from localStorage:', this.getCurrentUser());
+        console.error('Decoded JWT token payload:', decodedToken);
+        console.error('Token role:', decodedToken?.role);
+        console.error('Token user ID:', decodedToken?.userId || decodedToken?.id);
+        console.error('Token expiration:', decodedToken?.exp ? new Date(decodedToken.exp * 1000) : 'N/A');
+        console.error('Current time:', new Date());
+        
+        // Check if token is expired
+        const isExpired = decodedToken?.exp && decodedToken.exp < Date.now() / 1000;
+        console.error('Token expired:', isExpired);
+        console.error('Token expiration time:', decodedToken?.exp ? new Date(decodedToken.exp * 1000).toISOString() : 'N/A');
+        console.error('Current time:', new Date().toISOString());
+        
+        // Try to refresh token if it might be expired
+        if (isExpired) {
+          try {
+            console.log('Attempting to refresh expired token...');
+            await this.refreshToken();
+            console.log('Token refreshed successfully, retrying request...');
+            // Retry the request with new token
+            return this.request<T>(endpoint, options, false);
+          } catch (refreshError) {
+            // Refresh failed, clear auth and throw
+            console.error('Token refresh failed:', refreshError);
+            this.logout();
+            throw new Error('Session expired. Please login again.');
+          }
+        }
+      }
+
       const data = await response.json();
 
       if (!response.ok) {
+        // Log detailed error for debugging
+        if (response.status === 403) {
+          const token = localStorage.getItem('accessToken');
+          const decodedToken = token ? this.decodeToken(token) : null;
+          console.error('Access denied. Response:', data);
+          console.error('Current user from localStorage:', this.getCurrentUser());
+          console.error('Decoded JWT token:', decodedToken);
+          console.error('Token role:', decodedToken?.role);
+          console.error('Expected roles:', data.error?.includes('Approver') ? 'Approver or NPD' : 'Unknown');
+        } else {
+          // Log validation or other errors
+          console.error(`API Error (${response.status}):`, data);
+          if (data.details && Array.isArray(data.details)) {
+            console.error('Validation errors:', data.details);
+          } else if (data.errors && Array.isArray(data.errors)) {
+            console.error('Validation errors:', data.errors);
+          }
+        }
+        // Include validation errors in the error message if available
+        if (data.details && Array.isArray(data.details)) {
+          const errorMessages = data.details.map((err: any) => err.message || err.path || err).join(', ');
+          throw new Error(errorMessages || data.error || data.message || 'An error occurred');
+        } else if (data.errors && Array.isArray(data.errors)) {
+          const errorMessages = data.errors.map((err: any) => err.message || err).join(', ');
+          throw new Error(errorMessages || data.error || data.message || 'An error occurred');
+        }
         throw new Error(data.error || data.message || 'An error occurred');
       }
 
@@ -138,6 +239,24 @@ class ApiService {
     return !!localStorage.getItem('accessToken');
   }
 
+  // Helper to decode JWT token (for debugging)
+  decodeToken(token: string): any {
+    try {
+      const base64Url = token.split('.')[1];
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      );
+      return JSON.parse(jsonPayload);
+    } catch (error) {
+      console.error('Error decoding token:', error);
+      return null;
+    }
+  }
+
   // Projects endpoints
   async getProjects(filters?: {
     status?: string;
@@ -196,12 +315,37 @@ class ApiService {
     status?: string;
     description?: string;
   }): Promise<any> {
-    const response = await this.request<any>('/projects', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    console.log('=== API Service: createProject ===');
+    console.log('Endpoint:', `${this.baseUrl}/projects`);
+    console.log('Method: POST');
+    console.log('Request data:', data);
+    console.log('Request body (JSON):', JSON.stringify(data));
+    
+    try {
+      // Ensure status is a valid ProjectStatus enum value or omit it (backend will default to Active)
+      const requestData = {
+        customerPO: data.customerPO,
+        partNumber: data.partNumber,
+        toolNumber: data.toolNumber,
+        price: data.price,
+        targetDate: data.targetDate,
+        ...(data.status && { status: data.status }),
+        ...(data.description && { description: data.description }),
+      };
+      
+      console.log('Final request data being sent:', requestData);
+      
+      const response = await this.request<any>('/projects', {
+        method: 'POST',
+        body: JSON.stringify(requestData),
+      });
 
-    return response.data!;
+      console.log('API Response received:', response);
+      return response.data!;
+    } catch (error) {
+      console.error('API Error in createProject:', error);
+      throw error;
+    }
   }
 
   async updateProject(id: string, data: {

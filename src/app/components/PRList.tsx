@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Plus, CheckCircle, XCircle, FileText, Trash2, AlertCircle, Clock, Award, Eye, Edit, Download, Search, Filter, X, Layers, DollarSign, Activity, FileDown, Star, ArrowUpDown, ArrowUp, ArrowDown, Send, ChevronDown } from "lucide-react";
 import type { Project, PR, PRItem } from "./Dashboard";
 import { CreatePRFormEnhanced } from "./CreatePRFormEnhanced";
+import { apiService } from "../services/api";
 import { 
   TextField, 
   MenuItem, 
@@ -45,8 +46,8 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 interface PRListProps {
-  prs: PR[];
-  setPRs: (prs: PR[]) => void;
+  prs?: PR[]; // Optional now, will fetch from API
+  setPRs?: (prs: PR[]) => void; // Optional now
   projects: Project[];
   userRole: "Approver" | "NPD" | "Maintenance" | "Spares" | "Indentor";
   suppliers?: { id: string; name: string; status: string }[];
@@ -54,7 +55,14 @@ interface PRListProps {
   onCreatePRClose?: () => void;
 }
 
-export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCreatePRDirectly = false, onCreatePRClose }: PRListProps) {
+export function PRList({ prs: prsProp, setPRs: setPRsProp, projects, userRole, suppliers = [], openCreatePRDirectly = false, onCreatePRClose }: PRListProps) {
+  // Internal state for PRs fetched from API
+  const [prs, setPRs] = useState<PR[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalPRs, setTotalPRs] = useState(0);
+  const [pagination, setPagination] = useState<any>(null);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [showCreatePRScreen, setShowCreatePRScreen] = useState(false);
   const [showEditPRScreen, setShowEditPRScreen] = useState(false);
@@ -93,6 +101,156 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
     requirements: "",
   });
 
+  // Transform backend PR data to frontend format
+  const transformBackendPR = (backendPR: any): PR => {
+    // Normalize pr_type: convert "NewSet" to "New Set", "Modification" stays same, etc.
+    const normalizePRType = (prType: string): "New Set" | "Modification" | "Refurbished" => {
+      if (!prType) return "New Set";
+      const normalized = prType
+        .replace(/NewSet/i, "New Set")
+        .replace(/newset/i, "New Set")
+        .replace(/Modificati/i, "Modification")
+        .replace(/modificati/i, "Modification")
+        .replace(/Refurbished/i, "Refurbished")
+        .replace(/refurbished/i, "Refurbished");
+      
+      if (normalized === "New Set" || normalized === "Modification" || normalized === "Refurbished") {
+        return normalized;
+      }
+      return "New Set"; // Default fallback
+    };
+
+    // Transform suppliers array - backend might have supplier objects
+    const suppliersList = backendPR.suppliers?.map((s: any) => 
+      typeof s === 'string' ? s : s.name || s.supplierCode || 'Unknown'
+    ) || [];
+
+    // Transform items - ensure we always have an array
+    const items: PRItem[] = backendPR.items?.map((item: any) => ({
+      id: item.id || `ITEM-${Date.now()}-${Math.random()}`,
+      name: item.name || 'Unnamed Item',
+      specification: item.specification || '',
+      quantity: item.quantity || 0,
+      requirements: item.requirements || '',
+      price: item.bomUnitPrice || item.price || 0,
+      itemCode: item.itemCode || item.item_code,
+    })) || [];
+
+    // Transform quotations if available
+    const quotations = backendPR.quotations?.map((quot: any) => ({
+      id: quot.id,
+      prId: quot.prId || backendPR.id,
+      supplier: typeof quot.supplier === 'string' ? quot.supplier : quot.supplier?.name || 'Unknown',
+      price: quot.totalPrice || quot.price,
+      items: quot.items || [],
+      deliveryTerms: quot.deliveryTerms || '',
+      deliveryDate: quot.deliveryDate || '',
+      status: quot.status || 'Pending',
+      notes: quot.notes || '',
+    })) || [];
+
+    // Transform critical spares
+    const criticalSpares = backendPR.criticalSpares?.map((cs: any) => ({
+      id: cs.prItemId || cs.id,
+      quantity: cs.quantity,
+    })) || [];
+
+    return {
+      id: backendPR.prNumber || backendPR.pr_number || backendPR.id,
+      projectId: backendPR.projectId || backendPR.project_id || (backendPR.project?.id || ''),
+      prType: normalizePRType(backendPR.prType || backendPR.pr_type),
+      items,
+      suppliers: suppliersList,
+      status: (backendPR.status || 'Submitted') as PR['status'],
+      createdBy: typeof backendPR.createdBy === 'string' 
+        ? backendPR.createdBy 
+        : backendPR.createdBy
+        ? `${backendPR.createdBy?.firstName || ''} ${backendPR.createdBy?.lastName || ''}`.trim() || 'Unknown'
+        : 'Unknown',
+      createdAt: backendPR.createdAt || backendPR.created_at || new Date().toISOString(),
+      approverComments: backendPR.approverComments || backendPR.approver_comments,
+      quotations,
+      awardedSupplier: typeof backendPR.awardedSupplier === 'string' 
+        ? backendPR.awardedSupplier 
+        : backendPR.awardedSupplier?.name || backendPR.awardedSupplier || backendPR.awarded_supplier,
+      modRefReason: backendPR.modRefReason || backendPR.mod_ref_reason,
+      criticalSpares,
+      itemsReceivedDate: backendPR.itemsReceivedDate || backendPR.items_received_date,
+    };
+  };
+
+  // Fetch PRs from API
+  const fetchPRs = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const filters: any = {
+        page: currentPage,
+        limit: itemsPerPage,
+      };
+
+      if (searchQuery) {
+        filters.search = searchQuery;
+      }
+
+      if (statusFilter !== "All") {
+        filters.status = statusFilter;
+      }
+
+      if (prTypeFilter !== "All") {
+        filters.prType = prTypeFilter;
+      }
+
+      const response = await apiService.getPRs(filters);
+      console.log('API Response:', response);
+      console.log('Raw PRs data:', response.data);
+      
+      if (!response.data || !Array.isArray(response.data)) {
+        console.error('Invalid response data format:', response);
+        setError('Invalid data format received from server');
+        setPRs([]);
+        return;
+      }
+      
+      const transformedPRs = response.data.map(transformBackendPR);
+      console.log('Transformed PRs:', transformedPRs);
+      
+      setPRs(transformedPRs);
+      setTotalPRs(response.pagination?.total || transformedPRs.length);
+      setPagination(response.pagination);
+
+      // Update parent if callback provided (for backward compatibility)
+      if (setPRsProp) {
+        setPRsProp(transformedPRs);
+      }
+    } catch (err) {
+      console.error('Error fetching PRs:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch PRs');
+      setPRs([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch PRs on mount and when filters change
+  useEffect(() => {
+    fetchPRs();
+  }, [currentPage, statusFilter, prTypeFilter]);
+
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (currentPage === 1) {
+        fetchPRs();
+      } else {
+        setCurrentPage(1); // Reset to first page on search
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   // Open Create PR screen directly when prop is set
   useEffect(() => {
     if (openCreatePRDirectly) {
@@ -110,6 +268,14 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
       if (pr) {
         setSelectedPR(pr);
         setShowViewPRScreen(true);
+      } else {
+        // If PR not in current list, fetch it individually
+        apiService.getPRById(prId).then(backendPR => {
+          setSelectedPR(transformBackendPR(backendPR));
+          setShowViewPRScreen(true);
+        }).catch(err => {
+          console.error('Error fetching PR:', err);
+        });
       }
     };
 
@@ -153,101 +319,163 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
     }
   };
 
-  const handleCreatePR = (formDataSubmit: any, itemsSubmit: PRItem[], criticalSpares: string[]) => {
-    const newPR: PR = {
-      id: `PR-${Date.now()}`,
-      projectId: formDataSubmit.projectId,
-      prType: formDataSubmit.prType,
-      items: itemsSubmit,
-      suppliers: formDataSubmit.suppliers,
-      status: "Submitted",
-      createdBy: "NPD Team",
-      createdAt: new Date().toISOString(),
-      quotations: [],
-      criticalSpares: criticalSpares, // Store critical spares for later use
-    };
+  const handleCreatePR = async (formDataSubmit: any, itemsSubmit: PRItem[], criticalSpares: Array<{ id: string; quantity: number }>) => {
+    try {
+      // Transform critical spares format if needed
+      const criticalSparesData = criticalSpares.map(cs => {
+        // If cs is a string (item ID), convert to object format
+        if (typeof cs === 'string') {
+          const item = itemsSubmit.find(i => i.id === cs);
+          return item ? { quantity: 1, notes: '' } : { quantity: 1, notes: '' };
+        }
+        return { quantity: cs.quantity, notes: '' };
+      });
 
-    // Add new PR at the top of the list
-    setPRs([newPR, ...prs]);
-    setIsDialogOpen(false);
+      const response = await apiService.createPR({
+        projectId: formDataSubmit.projectId,
+        prType: formDataSubmit.prType,
+        modRefReason: formDataSubmit.modRefReason || undefined,
+        items: itemsSubmit.map(item => ({
+          itemCode: (item as any).itemCode,
+          name: item.name,
+          specification: item.specification,
+          quantity: item.quantity,
+          requirements: item.requirements,
+          bomUnitPrice: item.price,
+        })),
+        supplierIds: formDataSubmit.suppliers.filter((s: string) => {
+          // If supplier is an ID string, use it; otherwise find ID from name
+          const supplier = suppliers.find(sup => sup.id === s || sup.name === s);
+          return supplier?.id;
+        }),
+        criticalSpares: criticalSparesData.map((cs, idx) => ({
+          quantity: cs.quantity,
+          notes: cs.notes || '',
+        })),
+      });
+
+      // Refresh the PR list and summary stats
+      await fetchPRs();
+      await fetchSummaryStats();
+      setShowCreatePRScreen(false);
+      if (onCreatePRClose) onCreatePRClose();
+    } catch (err) {
+      console.error('Error creating PR:', err);
+      alert(err instanceof Error ? err.message : 'Failed to create PR');
+    }
   };
 
-  const handleUpdatePR = (formDataSubmit: any, itemsSubmit: PRItem[], criticalSpares: string[]) => {
-    if (selectedPR) {
-      setPRs(
-        prs.map(pr =>
-          pr.id === selectedPR.id
-            ? {
-                ...pr,
-                projectId: formDataSubmit.projectId,
-                prType: formDataSubmit.prType,
-                items: itemsSubmit,
-                suppliers: formDataSubmit.suppliers,
-                criticalSpares: criticalSpares,
-                // If PR was rejected, change status back to "Under Review" when updated
-                status: pr.status === "Rejected" ? "Under Review" : pr.status,
-              }
-            : pr
-        )
-      );
+  const handleUpdatePR = async (formDataSubmit: any, itemsSubmit: PRItem[], criticalSpares: Array<{ id: string; quantity: number }>) => {
+    if (!selectedPR) return;
+
+    try {
+      const criticalSparesData = criticalSpares.map(cs => {
+        if (typeof cs === 'string') {
+          return { quantity: 1, notes: '' };
+        }
+        return { quantity: cs.quantity, notes: '' };
+      });
+
+      await apiService.updatePR(selectedPR.id, {
+        prType: formDataSubmit.prType,
+        modRefReason: formDataSubmit.modRefReason || undefined,
+        items: itemsSubmit.map(item => ({
+          itemCode: (item as any).itemCode,
+          name: item.name,
+          specification: item.specification,
+          quantity: item.quantity,
+          requirements: item.requirements,
+          bomUnitPrice: item.price,
+        })),
+        supplierIds: formDataSubmit.suppliers.filter((s: string) => {
+          const supplier = suppliers.find(sup => sup.id === s || sup.name === s);
+          return supplier?.id;
+        }),
+        criticalSpares: criticalSparesData.map(cs => ({
+          quantity: cs.quantity,
+          notes: cs.notes || '',
+        })),
+      });
+
+      // Refresh the PR list and summary stats
+      await fetchPRs();
+      await fetchSummaryStats();
       setShowEditPRScreen(false);
       setSelectedPR(null);
+    } catch (err) {
+      console.error('Error updating PR:', err);
+      alert(err instanceof Error ? err.message : 'Failed to update PR');
     }
   };
 
-  const handleSubmitForApproval = (prId: string) => {
-    setPRs(
-      prs.map(pr =>
-        pr.id === prId
-          ? { ...pr, status: "Submitted" }
-          : pr
-      )
-    );
+  const handleSubmitForApproval = async (prId: string) => {
+    try {
+      // This might need a specific API endpoint if available
+      // For now, we'll update the PR status through the update endpoint
+      await apiService.updatePR(prId, {});
+      await fetchPRs();
+      await fetchSummaryStats();
+    } catch (err) {
+      console.error('Error submitting PR for approval:', err);
+      alert(err instanceof Error ? err.message : 'Failed to submit PR for approval');
+    }
   };
 
-  const handleSubmitToSuppliers = (prId: string) => {
-    setPRs(
-      prs.map(pr =>
-        pr.id === prId
-          ? { ...pr, status: "Sent To Supplier" }
-          : pr
-      )
-    );
+  const handleSubmitToSuppliers = async (prId: string) => {
+    try {
+      await apiService.sendToSuppliers(prId);
+      await fetchPRs();
+      await fetchSummaryStats();
+    } catch (err) {
+      console.error('Error sending PR to suppliers:', err);
+      alert(err instanceof Error ? err.message : 'Failed to send PR to suppliers');
+    }
   };
 
-  const handleApprove = () => {
-    if (selectedPR) {
-      setPRs(
-        prs.map(pr =>
-          pr.id === selectedPR.id
-            ? { ...pr, status: "Approved", approverComments: approvalComments }
-            : pr
-        )
-      );
+  const handleApprove = async () => {
+    if (!selectedPR) return;
+
+    try {
+      await apiService.approvePR(selectedPR.id, approvalComments);
+      await fetchPRs();
+      await fetchSummaryStats();
       setApprovalDialogOpen(false);
       setSelectedPR(null);
       setApprovalComments("");
+      setShowReviewPRScreen(false);
+    } catch (err) {
+      console.error('Error approving PR:', err);
+      alert(err instanceof Error ? err.message : 'Failed to approve PR');
     }
   };
 
-  const handleReject = () => {
-    if (selectedPR) {
-      setPRs(
-        prs.map(pr =>
-          pr.id === selectedPR.id
-            ? { ...pr, status: "Rejected", approverComments: approvalComments }
-            : pr
-        )
-      );
+  const handleReject = async () => {
+    if (!selectedPR) return;
+
+    try {
+      await apiService.rejectPR(selectedPR.id, approvalComments);
+      await fetchPRs();
+      await fetchSummaryStats();
       setApprovalDialogOpen(false);
       setSelectedPR(null);
       setApprovalComments("");
+      setShowReviewPRScreen(false);
+    } catch (err) {
+      console.error('Error rejecting PR:', err);
+      alert(err instanceof Error ? err.message : 'Failed to reject PR');
     }
   };
 
-  const handleDeletePR = (prId: string) => {
-    if (window.confirm("Are you sure you want to delete this PR?")) {
-      setPRs(prs.filter(pr => pr.id !== prId));
+  const handleDeletePR = async (prId: string) => {
+    if (!window.confirm("Are you sure you want to delete this PR?")) return;
+
+    try {
+      await apiService.deletePR(prId);
+      await fetchPRs();
+      await fetchSummaryStats();
+    } catch (err) {
+      console.error('Error deleting PR:', err);
+      alert(err instanceof Error ? err.message : 'Failed to delete PR');
     }
   };
 
@@ -521,22 +749,106 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
     return projects.find(p => p.id === projectId);
   };
 
-  // Filter PRs
-  const filteredPRs = prs.filter(pr => {
-    const project = getProjectDetails(pr.projectId);
-    const matchesSearch = 
-      pr.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      pr.prType.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (project?.customerPO.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (project?.partNumber.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesStatus = statusFilter === "All" || pr.status === statusFilter;
-    const matchesPRType = prTypeFilter === "All" || pr.prType === prTypeFilter;
-
-    return matchesSearch && matchesStatus && matchesPRType;
+  // Fetch summary statistics (all PRs for KPI calculations)
+  const [summaryStats, setSummaryStats] = useState({
+    total: 0,
+    approved: 0,
+    pending: 0,
+    awarded: 0,
+    evaluationPending: 0,
+    submittedForApproval: 0,
+    rejected: 0,
+    newBudget: 0,
+    modificationBudget: 0,
+    refurbishedBudget: 0,
   });
 
-  // Sort PRs
+  // Function to fetch summary stats - can be called after mutations
+  const fetchSummaryStats = async () => {
+    try {
+      // Fetch all PRs without pagination for summary stats
+      const response = await apiService.getPRs({ limit: 1000 });
+      const allPRs = response.data.map(transformBackendPR);
+
+      // Calculate stats
+      const total = allPRs.length;
+      const approved = allPRs.filter(pr => pr.status === "Approved").length;
+      const pending = allPRs.filter(pr => pr.status === "Submitted" || pr.status === "Submitted for Approval").length;
+      const awarded = allPRs.filter(pr => pr.status === "Awarded").length;
+      const evaluationPending = allPRs.filter(pr => pr.status === "Evaluation Pending").length;
+      const submittedForApproval = allPRs.filter(pr => pr.status === "Submitted for Approval").length;
+      const rejected = allPRs.filter(pr => pr.status === "Rejected").length;
+
+      // Calculate budgets from actual PR items prices
+      const newBudget = allPRs
+        .filter(pr => pr.prType === "New Set")
+        .reduce((sum, pr) => {
+          // Calculate total from PR items
+          const itemsTotal = pr.items.reduce((itemSum, item) => {
+            const itemPrice = item.price || 0;
+            const itemQuantity = item.quantity || 0;
+            return itemSum + (itemPrice * itemQuantity);
+          }, 0);
+          return sum + itemsTotal;
+        }, 0);
+
+      const modificationBudget = allPRs
+        .filter(pr => pr.prType === "Modification")
+        .reduce((sum, pr) => {
+          // Calculate total from PR items
+          const itemsTotal = pr.items.reduce((itemSum, item) => {
+            const itemPrice = item.price || 0;
+            const itemQuantity = item.quantity || 0;
+            return itemSum + (itemPrice * itemQuantity);
+          }, 0);
+          return sum + itemsTotal;
+        }, 0);
+
+      const refurbishedBudget = allPRs
+        .filter(pr => pr.prType === "Refurbished")
+        .reduce((sum, pr) => {
+          // Calculate total from PR items
+          const itemsTotal = pr.items.reduce((itemSum, item) => {
+            const itemPrice = item.price || 0;
+            const itemQuantity = item.quantity || 0;
+            return itemSum + (itemPrice * itemQuantity);
+          }, 0);
+          return sum + itemsTotal;
+        }, 0);
+
+      setSummaryStats({
+        total,
+        approved,
+        pending,
+        awarded,
+        evaluationPending,
+        submittedForApproval,
+        rejected,
+        newBudget,
+        modificationBudget,
+        refurbishedBudget,
+      });
+    } catch (err) {
+      console.error('Error fetching summary stats:', err);
+    }
+  };
+
+  // Fetch summary stats on mount and after mutations
+  useEffect(() => {
+    fetchSummaryStats();
+  }, []); // Fetch on mount
+
+  // Also refresh summary stats after successful mutations
+  useEffect(() => {
+    if (prs.length > 0) {
+      fetchSummaryStats();
+    }
+  }, [prs.length]); // Re-fetch when PRs list changes
+
+  // Since filtering is done server-side, we use prs directly
+  const filteredPRs = prs; // Already filtered by API
+
+  // Client-side sorting (can be moved to server-side later)
   const sortedPRs = [...filteredPRs].sort((a, b) => {
     if (!sortColumn) return 0;
     
@@ -567,43 +879,23 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
     return sortDirection === 'asc' ? (aValue as number) - (bValue as number) : (bValue as number) - (aValue as number);
   });
 
-  // Pagination
-  const totalPages = Math.ceil(sortedPRs.length / itemsPerPage);
-  const paginatedPRs = sortedPRs.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // Use API pagination
+  const totalPages = pagination?.totalPages || Math.ceil(totalPRs / itemsPerPage);
+  const paginatedPRs = sortedPRs; // Already paginated by API
 
-  // Calculate KPIs
-  const totalPRs = prs.length;
-  const approvedPRs = prs.filter(pr => pr.status === "Approved").length;
-  const pendingApproval = prs.filter(pr => pr.status === "Submitted").length;
-  const awardedPRs = prs.filter(pr => pr.status === "Awarded").length;
-  const evaluationPending = prs.filter(pr => pr.status === "Evaluation Pending").length;
-  const submittedForApproval = prs.filter(pr => pr.status === "Submitted for Approval").length;
-  const rejectedPRs = prs.filter(pr => pr.status === "Rejected").length;
-
-  // Calculate budgets by PR type (for Approver view)
-  const newPRBudget = prs
-    .filter(pr => pr.prType === "New Set")
-    .reduce((sum, pr) => {
-      const project = getProjectDetails(pr.projectId);
-      return sum + (project?.price || 0);
-    }, 0);
-
-  const modificationPRBudget = prs
-    .filter(pr => pr.prType === "Modification")
-    .reduce((sum, pr) => {
-      const project = getProjectDetails(pr.projectId);
-      return sum + (project?.price || 0);
-    }, 0);
-
-  const refurbishedPRBudget = prs
-    .filter(pr => pr.prType === "Refurbished")
-    .reduce((sum, pr) => {
-      const project = getProjectDetails(pr.projectId);
-      return sum + (project?.price || 0);
-    }, 0);
+  // Use summary stats for KPIs
+  const {
+    total: totalPRsCount,
+    approved: approvedPRs,
+    pending: pendingApproval,
+    awarded: awardedPRs,
+    evaluationPending,
+    submittedForApproval,
+    rejected: rejectedPRs,
+    newBudget: newPRBudget,
+    modificationBudget: modificationPRBudget,
+    refurbishedBudget: refurbishedPRBudget,
+  } = summaryStats;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -906,7 +1198,7 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
                     <div className="absolute -top-1 -right-1 p-1.5 bg-blue-600 rounded-full shadow-sm">
                       <FileText className="w-3 h-3 text-white" />
                     </div>
-                    <div className="text-2xl font-bold text-blue-600">{totalPRs}</div>
+                    <div className="text-2xl font-bold text-blue-600">{totalPRsCount}</div>
                     <p className="text-[10px] text-blue-700 mt-0.5 font-semibold">PRs</p>
                   </div>
                   <p className="text-[9px] text-slate-600 mt-1.5 font-medium">Total PRs</p>
@@ -993,7 +1285,7 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
                     <div className="absolute -top-1 -right-1 p-1.5 bg-blue-600 rounded-full shadow-sm">
                       <FileText className="w-3.5 h-3.5 text-white" />
                     </div>
-                    <div className="text-3xl font-bold text-blue-600">{totalPRs}</div>
+                    <div className="text-3xl font-bold text-blue-600">{totalPRsCount}</div>
                     <p className="text-[11px] text-blue-700 mt-0.5 font-semibold">PRs</p>
                   </div>
                   <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Total</p>
@@ -1305,22 +1597,43 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
               </div>
             ) : (
               <>
-                <Paper elevation={3} sx={{ borderRadius: 2, display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-                  {/* Fixed Table Header */}
-                  <TableContainer sx={{ flex: 0, overflow: 'visible' }}>
-                    <Table sx={{ minWidth: 650, tableLayout: 'fixed' }} size="small">
-                      <colgroup>
-                        <col style={{ width: '10%' }} />
-                        <col style={{ width: '15%' }} />
-                        <col style={{ width: '10%' }} />
-                        <col style={{ width: '10%' }} />
-                        <col style={{ width: '8%' }} />
-                        <col style={{ width: '12%' }} />
-                        <col style={{ width: '10%' }} />
-                        <col style={{ width: '25%' }} />
-                      </colgroup>
-                      <TableHead>
-                        <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                {isLoading ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                    <p>Loading purchase requisitions...</p>
+                  </div>
+                ) : error ? (
+                  <div className="text-center py-12 text-red-600">
+                    <AlertCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>Error: {error}</p>
+                    <Button onClick={fetchPRs} className="mt-4">Retry</Button>
+                  </div>
+                ) : paginatedPRs.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No purchase requisitions found.</p>
+                    {(searchQuery || statusFilter !== "All" || prTypeFilter !== "All") && (
+                      <p className="text-sm mt-2">Try adjusting your filters</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                  <Paper elevation={3} sx={{ borderRadius: 2, display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                    {/* Fixed Table Header */}
+                    <TableContainer sx={{ flex: 0, overflow: 'visible' }}>
+                      <Table sx={{ minWidth: 650, tableLayout: 'fixed' }} size="small">
+                        <colgroup>
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '15%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '8%' }} />
+                          <col style={{ width: '12%' }} />
+                          <col style={{ width: '10%' }} />
+                          <col style={{ width: '25%' }} />
+                        </colgroup>
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: '#f8fafc' }}>
                           <TableCell 
                             onClick={() => handleSort('id')}
                             sx={{ 
@@ -1481,8 +1794,12 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
                               <TableCell sx={{ fontSize: '0.75rem' }}>
                                 {project ? (
                                   <div>
-                                    <div className="font-medium text-purple-600">{project.id}</div>
-                                    <div className="text-[10px] text-muted-foreground">{project.partNumber}</div>
+                                    <div className="font-medium text-purple-600">
+                                      {project.projectNumber || project.id}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {project.customerPO ? `${project.customerPO} • ${project.partNumber}` : project.partNumber}
+                                    </div>
                                   </div>
                                 ) : (
                                   <span className="text-muted-foreground">-</span>
@@ -1604,10 +1921,10 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
                 </Paper>
 
                 {/* Fixed Pagination - Below table */}
-                {filteredPRs.length > 0 && (
+                {paginatedPRs.length > 0 && (
                   <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 1.5, gap: 2, flexShrink: 0 }}>
                     <Pagination
-                      count={Math.ceil(filteredPRs.length / itemsPerPage)}
+                      count={totalPages}
                       page={currentPage}
                       onChange={(event, value) => setCurrentPage(value)}
                       color="primary"
@@ -1627,13 +1944,15 @@ export function PRList({ prs, setPRs, projects, userRole, suppliers = [], openCr
                       }}
                     />
                     <Chip 
-                      label={`Page ${currentPage} of ${Math.ceil(filteredPRs.length / itemsPerPage)} • ${filteredPRs.length} records`}
+                      label={`Page ${currentPage} of ${totalPages} • ${pagination?.total || totalPRs} records`}
                       size="small"
                       variant="outlined"
                       sx={{ fontWeight: 600, fontSize: '0.7rem', height: 24 }}
                     />
                   </Box>
                 )}
+                </>
+              )}
               </>
             )}
           </div>

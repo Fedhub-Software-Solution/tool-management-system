@@ -1029,122 +1029,47 @@ function App() {
     }
   ]);
 
-  // Suppliers state
-  const [suppliers, setSuppliers] = useState<Supplier[]>([
-    {
-      id: "SUP-001",
-      name: "TechMold Systems",
-      code: "TMS-001",
-      contactPerson: "Rajesh Kumar",
-      email: "rajesh@techmold.com",
-      phone: "+91-9876543210",
-      address: "Plot 42, Industrial Area Phase 3",
-      city: "Pune",
-      state: "Maharashtra",
-      pincode: "411019",
-      gstin: "27AABCT1234M1Z5",
-      status: "Active",
-      category: ["Tools & Dies", "Machinery"],
-      rating: 4.5,
-      totalOrders: 24,
-      createdAt: "2023-01-15T10:00:00Z",
-      notes: "Reliable supplier with excellent quality"
-    },
-    {
-      id: "SUP-002",
-      name: "Precision Tools Ltd",
-      code: "PTL-002",
-      contactPerson: "Amit Patel",
-      email: "amit@precisiontools.com",
-      phone: "+91-9123456789",
-      address: "B-Wing, Tech Park",
-      city: "Bangalore",
-      state: "Karnataka",
-      pincode: "560001",
-      gstin: "29AACCP1234N1ZA",
-      status: "Active",
-      category: ["Components", "Spare Parts", "Tools & Dies"],
-      rating: 4.2,
-      totalOrders: 18,
-      createdAt: "2023-03-20T14:30:00Z",
-      notes: "Fast delivery, competitive pricing"
-    },
-    {
-      id: "SUP-003",
-      name: "Global Tooling Co",
-      code: "GTC-003",
-      contactPerson: "Sarah Williams",
-      email: "sarah@globaltooling.com",
-      phone: "+91-9988776655",
-      address: "Sector 15, MIDC",
-      city: "Mumbai",
-      state: "Maharashtra",
-      pincode: "400001",
-      gstin: "27AACGC1234P1Z8",
-      status: "Active",
-      category: ["Tools & Dies", "Raw Materials"],
-      rating: 4.0,
-      totalOrders: 15,
-      createdAt: "2023-05-10T09:15:00Z"
-    },
-    {
-      id: "SUP-004",
-      name: "MoldTech Industries",
-      code: "MTI-004",
-      contactPerson: "Suresh Reddy",
-      email: "suresh@moldtech.com",
-      phone: "+91-9876123456",
-      address: "Plot 28, Export Promotion Zone",
-      city: "Chennai",
-      state: "Tamil Nadu",
-      pincode: "600001",
-      gstin: "33AACMI1234Q1Z2",
-      status: "Active",
-      category: ["Tools & Dies", "Machinery", "Services"],
-      rating: 4.7,
-      totalOrders: 32,
-      createdAt: "2022-11-05T11:20:00Z",
-      notes: "Premium quality, ISO certified"
-    },
-    {
-      id: "SUP-005",
-      name: "Refurb Tech Solutions",
-      code: "RTS-005",
-      contactPerson: "Vikas Sharma",
-      email: "vikas@refurbtech.com",
-      phone: "+91-9123987654",
-      address: "Industrial Estate, Zone C",
-      city: "Coimbatore",
-      state: "Tamil Nadu",
-      pincode: "641001",
-      gstin: "33AACRT1234R1Z9",
-      status: "Active",
-      category: ["Services", "Spare Parts"],
-      rating: 3.8,
-      totalOrders: 12,
-      createdAt: "2023-07-18T15:45:00Z",
-      notes: "Specializes in refurbishment"
-    },
-    {
-      id: "SUP-006",
-      name: "Steel Components Inc",
-      code: "SCI-006",
-      contactPerson: "Priya Desai",
-      email: "priya@steelcomponents.com",
-      phone: "+91-9876509876",
-      address: "G-12, Heavy Industry Area",
-      city: "Ahmedabad",
-      state: "Gujarat",
-      pincode: "380001",
-      gstin: "24AACSC1234S1Z3",
-      status: "Inactive",
-      category: ["Raw Materials", "Components"],
-      rating: 3.5,
-      totalOrders: 8,
-      createdAt: "2023-09-22T13:00:00Z",
-      notes: "On hold due to quality issues"
-    }
-  ]);
+  // Suppliers state - will be fetched from API
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  // Fetch all suppliers for Dashboard stats when user is logged in
+  useEffect(() => {
+    const fetchAllSuppliers = async () => {
+      if (!selectedRole || !apiService.isAuthenticated()) return;
+      
+      try {
+        const response = await apiService.getSuppliers({ limit: 1000 }); // Get all for Dashboard stats
+        const transformSupplier = (backendSupplier: any): Supplier => {
+          return {
+            id: backendSupplier.id,
+            name: backendSupplier.name || '',
+            code: backendSupplier.supplierCode || '',
+            contactPerson: backendSupplier.contactPerson || '',
+            email: backendSupplier.email || '',
+            phone: backendSupplier.phone || '',
+            address: backendSupplier.address || '',
+            city: backendSupplier.city || '',
+            state: backendSupplier.state || '',
+            pincode: backendSupplier.pincode || '',
+            gstin: backendSupplier.gstin || '',
+            status: backendSupplier.status === 'ACTIVE' ? 'Active' : 'Inactive',
+            category: backendSupplier.categories || [],
+            rating: backendSupplier.rating || 0,
+            totalOrders: backendSupplier.totalOrders || 0,
+            createdAt: backendSupplier.createdAt || new Date().toISOString(),
+            notes: backendSupplier.notes || '',
+          };
+        };
+        const transformedSuppliers = response.data.map(transformSupplier);
+        setSuppliers(transformedSuppliers);
+      } catch (err) {
+        console.error('Error fetching suppliers for Dashboard:', err);
+        // Keep empty array on error
+      }
+    };
+
+    fetchAllSuppliers();
+  }, [selectedRole]);
 
   // Calculate pending counts for nav badges
   const getPendingCounts = () => {

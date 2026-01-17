@@ -45,25 +45,34 @@ export class SuppliersService {
     data: CreateSupplierDto,
     createdBy?: string
   ): Promise<SupplierResponse> {
-    // Check if supplier code already exists
-    const existingSupplier = await suppliersRepository.findBySupplierCode(
-      data.supplierCode
-    );
-    if (existingSupplier) {
-      throw new ConflictError('Supplier code already exists');
+    try {
+      // Check if supplier code already exists
+      const existingSupplier = await suppliersRepository.findBySupplierCode(
+        data.supplierCode
+      );
+      if (existingSupplier) {
+        throw new ConflictError('Supplier code already exists');
+      }
+
+      // Create supplier
+      const supplier = await suppliersRepository.create({
+        ...data,
+        createdBy,
+      });
+
+      if (!supplier) {
+        throw new Error('Failed to create supplier');
+      }
+
+      return this.mapToSupplierResponse(supplier);
+    } catch (error) {
+      console.error('Error in createSupplier:', error);
+      // Re-throw the error with more context if it's not already an AppError
+      if (error instanceof ConflictError || error instanceof NotFoundError) {
+        throw error;
+      }
+      throw new Error(`Failed to create supplier: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-
-    // Create supplier
-    const supplier = await suppliersRepository.create({
-      ...data,
-      createdBy,
-    });
-
-    if (!supplier) {
-      throw new Error('Failed to create supplier');
-    }
-
-    return this.mapToSupplierResponse(supplier);
   }
 
   /**

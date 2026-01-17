@@ -119,8 +119,21 @@ export class SuppliersRepository {
           skipDuplicates: true,
         });
 
-        // Fetch supplier with categories
-        return this.findById(supplier.id);
+        // Fetch supplier with categories using transaction
+        return tx.supplier.findUnique({
+          where: { id: supplier.id },
+          include: {
+            creator: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+            categories: true,
+          },
+        });
       }
 
       return supplier;

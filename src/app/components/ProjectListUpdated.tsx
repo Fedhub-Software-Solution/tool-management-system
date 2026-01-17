@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -6,9 +6,10 @@ import { Label } from "./ui/label";
 import { Badge } from "./ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Plus, Calendar, DollarSign, Hash, FolderOpen, CheckCircle, Clock, Eye, Edit, Trash2, Download, Search, Filter, X, FileText, ArrowLeft, ArrowUpDown, AlertTriangle, Bell, PauseCircle, FileDown, ChevronDown } from "lucide-react";
+import { Plus, Calendar, DollarSign, Hash, FolderOpen, CheckCircle, Clock, Eye, Edit, Trash2, Download, Search, Filter, X, FileText, ArrowLeft, ArrowUpDown, AlertTriangle, Bell, PauseCircle, FileDown, ChevronDown, Loader2 } from "lucide-react";
 import type { Project, PR } from "./Dashboard";
 import { ProjectDetailView } from "./ProjectDetailView";
+import { apiService } from "../services/api";
 import {
   TextField,
   MenuItem,
@@ -50,9 +51,29 @@ interface ProjectListProps {
   prs: PR[];
 }
 
+// Transform backend project to frontend format
+const transformProject = (backendProject: any): Project => {
+  return {
+    id: backendProject.id,
+    projectNumber: backendProject.projectNumber,
+    customerPO: backendProject.customerPO,
+    partNumber: backendProject.partNumber,
+    toolNumber: backendProject.toolNumber,
+    price: parseFloat(backendProject.price),
+    targetDate: backendProject.targetDate,
+    status: backendProject.status,
+    description: backendProject.description,
+    createdBy: typeof backendProject.createdBy === 'object' 
+      ? `${backendProject.createdBy.firstName} ${backendProject.createdBy.lastName}`
+      : backendProject.createdBy || 'Unknown',
+    createdAt: backendProject.createdAt,
+    updatedAt: backendProject.updatedAt,
+  };
+};
+
 type SortableKeys = 'id' | 'customerPO' | 'partNumber' | 'toolNumber' | 'createdAt' | 'targetDate' | 'status' | 'price';
 
-export function ProjectList({ projects, setProjects, userRole, prs }: ProjectListProps) {
+export function ProjectList({ projects: parentProjects, setProjects: setParentProjects, userRole, prs }: ProjectListProps) {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
@@ -67,6 +88,8 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     direction: 'asc' | 'desc';
   }>({ key: null, direction: 'asc' });
   const [exportMenuAnchor, setExportMenuAnchor] = useState<null | HTMLElement>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const [formData, setFormData] = useState({
     customerPO: "",
@@ -76,6 +99,40 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     targetDate: "",
   });
 
+  // Fetch projects from API
+  const fetchProjects = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const filters: any = {
+        page: currentPage,
+        limit: itemsPerPage,
+      };
+      
+      if (statusFilter !== "All") {
+        filters.status = statusFilter;
+      }
+      
+      if (searchQuery) {
+        filters.search = searchQuery;
+      }
+
+      const response = await apiService.getProjects(filters);
+      const transformedProjects = response.data.map(transformProject);
+      setParentProjects(transformedProjects);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      console.error('Error fetching projects:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentPage, statusFilter, searchQuery, itemsPerPage, setParentProjects]);
+
+  // Fetch projects on mount and when filters change
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
   const handleSort = (key: SortableKeys) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -84,47 +141,56 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     setSortConfig({ key, direction });
   };
 
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateProject = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     
-    const newProject: Project = {
-      id: `PRJ-${Date.now()}`,
-      customerPO: formData.customerPO,
-      partNumber: formData.partNumber,
-      toolNumber: formData.toolNumber,
-      price: parseFloat(formData.price),
-      targetDate: formData.targetDate,
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: new Date().toISOString(),
-    };
-
-    setProjects([...projects, newProject]);
-    setIsDialogOpen(false);
-    setFormData({
-      customerPO: "",
-      partNumber: "",
-      toolNumber: "",
-      price: "",
-      targetDate: "",
-    });
-  };
-
-  const handleEditProject = (e: React.FormEvent) => {
-    e.preventDefault();
+    console.log('=== handleCreateProject called ===');
+    setIsLoading(true);
+    setError(null);
     
-    if (selectedProject) {
-      const updatedProject: Project = {
-        ...selectedProject,
-        customerPO: formData.customerPO,
-        partNumber: formData.partNumber,
-        toolNumber: formData.toolNumber,
+    try {
+      const newProjectData = {
+        customerPO: formData.customerPO.trim(),
+        partNumber: formData.partNumber.trim(),
+        toolNumber: formData.toolNumber.trim(),
         price: parseFloat(formData.price),
         targetDate: formData.targetDate,
       };
 
-      setProjects(projects.map(p => p.id === selectedProject.id ? updatedProject : p));
-      setIsEditDialogOpen(false);
+      console.log('Creating project with data:', newProjectData);
+
+      // Validate required fields
+      if (!newProjectData.customerPO || !newProjectData.partNumber || !newProjectData.toolNumber || !newProjectData.price || !newProjectData.targetDate) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      if (isNaN(newProjectData.price) || newProjectData.price <= 0) {
+        throw new Error('Please enter a valid price');
+      }
+
+      // Validate date format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(newProjectData.targetDate)) {
+        throw new Error('Invalid date format');
+      }
+
+      const createdProject = await apiService.createProject(newProjectData);
+      console.log('Project created successfully:', createdProject);
+      
+      // Refresh the project list
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+      
+      setIsDialogOpen(false);
       setFormData({
         customerPO: "",
         partNumber: "",
@@ -132,12 +198,110 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         price: "",
         targetDate: "",
       });
+      setError(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create project';
+      setError(errorMessage);
+      console.error('Error creating project:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    if (confirm("Are you sure you want to delete this project?")) {
-      setProjects(projects.filter(p => p.id !== projectId));
+  const handleEditProject = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    if (!selectedProject) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const updateData = {
+        customerPO: formData.customerPO.trim(),
+        partNumber: formData.partNumber.trim(),
+        toolNumber: formData.toolNumber.trim(),
+        price: parseFloat(formData.price),
+        targetDate: formData.targetDate,
+      };
+
+      console.log('Updating project with data:', { id: selectedProject.id, ...updateData });
+
+      // Validate required fields
+      if (!updateData.customerPO || !updateData.partNumber || !updateData.toolNumber || updateData.price === undefined || !updateData.targetDate) {
+        throw new Error('Please fill in all required fields');
+      }
+
+      if (isNaN(updateData.price) || updateData.price <= 0) {
+        throw new Error('Please enter a valid price');
+      }
+
+      // Validate date format
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(updateData.targetDate)) {
+        throw new Error('Invalid date format');
+      }
+
+      const updatedProject = await apiService.updateProject(selectedProject.id, updateData);
+      console.log('Project updated successfully:', updatedProject);
+      
+      // Refresh the project list
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+      
+      setIsEditDialogOpen(false);
+      setSelectedProject(null);
+      setFormData({
+        customerPO: "",
+        partNumber: "",
+        toolNumber: "",
+        price: "",
+        targetDate: "",
+      });
+      setError(null);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update project';
+      setError(errorMessage);
+      console.error('Error updating project:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (!confirm("Are you sure you want to delete this project?")) {
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      await apiService.deleteProject(projectId);
+      // Refresh the project list
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete project');
+      console.error('Error deleting project:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -148,26 +312,34 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
   const handleEditClick = (project: Project) => {
     setSelectedProject(project);
+    // Format date for input field (YYYY-MM-DD)
+    const formatDateForInput = (dateString: string) => {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '';
+      return date.toISOString().split('T')[0];
+    };
+    
     setFormData({
-      customerPO: project.customerPO,
-      partNumber: project.partNumber,
-      toolNumber: project.toolNumber,
-      price: project.price.toString(),
-      targetDate: project.targetDate,
+      customerPO: project.customerPO || '',
+      partNumber: project.partNumber || '',
+      toolNumber: project.toolNumber || '',
+      price: project.price ? project.price.toString() : '',
+      targetDate: formatDateForInput(project.targetDate),
     });
     setIsEditDialogOpen(true);
   };
 
   const handleDownloadProject = (project: Project) => {
     const data = {
-      "Project ID": project.id,
+      "Project ID": project.projectNumber || project.id,
       "Customer PO": project.customerPO,
       "Part Number": project.partNumber,
       "Tool Number": project.toolNumber,
       "Price": `₹${project.price.toLocaleString()}`,
       "Target Date": new Date(project.targetDate).toLocaleDateString(),
       "Status": project.status,
-      "Created By": project.createdBy,
+      "Created By": typeof project.createdBy === 'string' ? project.createdBy : 'Unknown',
       "Created At": new Date(project.createdAt).toLocaleDateString(),
     };
 
@@ -176,7 +348,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${project.id}_${project.customerPO}.json`;
+    link.download = `${project.projectNumber || project.id}_${project.customerPO}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -191,14 +363,14 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
   const handleExportProjects = () => {
     const dataToExport = filteredProjects.map((project) => ({
-      "Project ID": project.id,
+      "Project ID": project.projectNumber || project.id,
       "Customer PO": project.customerPO,
       "Part Number": project.partNumber,
       "Tool Number": project.toolNumber,
       ...(userRole === "Approver" && { "Price": `₹${project.price.toLocaleString()}` }),
       "Target Date": new Date(project.targetDate).toLocaleDateString(),
       "Status": project.status,
-      "Created By": project.createdBy,
+      "Created By": typeof project.createdBy === 'string' ? project.createdBy : 'Unknown',
       "Created At": new Date(project.createdAt).toLocaleDateString(),
     }));
 
@@ -237,14 +409,14 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
   const handleExportProjectsPDF = () => {
     const dataToExport = filteredProjects.map((project) => ({
-      "Project ID": project.id,
+      "Project ID": project.projectNumber || project.id,
       "Customer PO": project.customerPO,
       "Part Number": project.partNumber,
       "Tool Number": project.toolNumber,
       ...(userRole === "Approver" && { "Price": `₹${project.price.toLocaleString()}` }),
       "Target Date": new Date(project.targetDate).toLocaleDateString(),
       "Status": project.status,
-      "Created By": project.createdBy,
+      "Created By": typeof project.createdBy === 'string' ? project.createdBy : 'Unknown',
       "Created At": new Date(project.createdAt).toLocaleDateString(),
     }));
 
@@ -300,13 +472,13 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
   };
 
   // Get unique part numbers for filter
-  const uniquePartNumbers = Array.from(new Set(projects.map(p => p.partNumber))).sort();
+  const uniquePartNumbers = Array.from(new Set(parentProjects.map(p => p.partNumber))).sort();
 
   // Filter projects
-  let filteredProjects = projects.filter(project => {
+  let filteredProjects = parentProjects.filter(project => {
     const matchesSearch = 
       project.customerPO.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (project.projectNumber || project.id).toLowerCase().includes(searchQuery.toLowerCase()) ||
       project.partNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       project.toolNumber.toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -319,8 +491,17 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
   // Sort projects
   if (sortConfig.key) {
     filteredProjects = [...filteredProjects].sort((a, b) => {
-      const aValue = a[sortConfig.key!];
-      const bValue = b[sortConfig.key!];
+      // For 'id' key, use projectNumber instead
+      let aValue: any;
+      let bValue: any;
+      
+      if (sortConfig.key === 'id') {
+        aValue = a.projectNumber || a.id;
+        bValue = b.projectNumber || b.id;
+      } else {
+        aValue = a[sortConfig.key!];
+        bValue = b[sortConfig.key!];
+      }
       
       if (aValue === undefined || bValue === undefined) return 0;
       
@@ -355,15 +536,15 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
   };
 
   // Calculate KPIs
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === "Active").length;
-  const completedProjects = projects.filter(p => p.status === "Completed").length;
-  const totalBudget = projects.reduce((sum, p) => sum + p.price, 0);
-  const onHoldProjects = projects.filter(p => p.status === "On Hold").length;
+  const totalProjects = parentProjects.length;
+  const activeProjects = parentProjects.filter(p => p.status === "Active").length;
+  const completedProjects = parentProjects.filter(p => p.status === "Completed").length;
+  const totalBudget = parentProjects.reduce((sum, p) => sum + p.price, 0);
+  const onHoldProjects = parentProjects.filter(p => p.status === "On Hold").length;
   
   // Calculate overdue projects (past target date and not completed)
   const today = new Date();
-  const overdueProjects = projects.filter(p => {
+  const overdueProjects = parentProjects.filter(p => {
     const targetDate = new Date(p.targetDate);
     return targetDate < today && p.status !== "Completed";
   }).length;
@@ -371,7 +552,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
   // Calculate upcoming deadlines (within next 7 days)
   const nextWeek = new Date();
   nextWeek.setDate(today.getDate() + 7);
-  const upcomingDeadlines = projects.filter(p => {
+  const upcomingDeadlines = parentProjects.filter(p => {
     const targetDate = new Date(p.targetDate);
     return targetDate >= today && targetDate <= nextWeek && p.status !== "Completed";
   }).length;
@@ -800,21 +981,57 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
                 {/* Create Button - Only for Approver */}
                 {userRole === "Approver" && (
-                  <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                    <DialogTrigger asChild>
-                      <Button className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg text-[11px] py-1.5 px-4 h-8 whitespace-nowrap">
-                        <Plus className="w-3.5 h-3.5 mr-1.5" />
-                        Create Project
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-2xl">
-                      <DialogHeader>
-                        <DialogTitle>Create New Project</DialogTitle>
-                        <DialogDescription>
-                          Create a new project for customer purchase order
-                        </DialogDescription>
-                      </DialogHeader>
-                      <form onSubmit={handleCreateProject} className="space-y-4">
+                  <>
+                    <Button 
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 shadow-lg text-[11px] py-1.5 px-4 h-8 whitespace-nowrap"
+                      onClick={() => {
+                        console.log('=== Create Project button clicked ===');
+                        setIsDialogOpen(true);
+                      }}
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                      Create Project
+                    </Button>
+                    
+                    <Dialog 
+                      open={isDialogOpen} 
+                      onOpenChange={(open) => {
+                        console.log('=== Dialog onOpenChange called ===', open);
+                        setIsDialogOpen(open);
+                        if (!open) {
+                          setFormData({
+                            customerPO: "",
+                            partNumber: "",
+                            toolNumber: "",
+                            price: "",
+                            targetDate: "",
+                          });
+                          setError(null);
+                        }
+                      }}
+                    >
+                      <DialogContent className="max-w-2xl">
+                        <DialogHeader>
+                          <DialogTitle>Create New Project</DialogTitle>
+                          <DialogDescription>
+                            Create a new project for customer purchase order
+                          </DialogDescription>
+                        </DialogHeader>
+                        {error && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                            <p className="text-sm text-red-700">{error}</p>
+                          </div>
+                        )}
+                        <form 
+                          onSubmit={(e) => {
+                            console.log('Form submit event triggered');
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCreateProject(e);
+                          }} 
+                          className="space-y-4"
+                          noValidate
+                        >
                         <div className="grid grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="customerPO">Customer PO Number</Label>
@@ -826,6 +1043,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                               }
                               placeholder="PO-2024-001"
                               required
+                              disabled={isLoading}
                             />
                           </div>
                           <div className="space-y-2">
@@ -838,6 +1056,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                               }
                               placeholder="PN-12345"
                               required
+                              disabled={isLoading}
                             />
                           </div>
                         </div>
@@ -853,6 +1072,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                               }
                               placeholder="TN-67890"
                               required
+                              disabled={isLoading}
                             />
                           </div>
                           <div className="space-y-2">
@@ -867,6 +1087,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                               }
                               placeholder="50000.00"
                               required
+                              disabled={isLoading}
                             />
                           </div>
                         </div>
@@ -881,6 +1102,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                               setFormData({ ...formData, targetDate: e.target.value })
                             }
                             required
+                            disabled={isLoading}
                           />
                         </div>
 
@@ -888,15 +1110,38 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                           <Button
                             type="button"
                             variant="outline"
-                            onClick={() => setIsDialogOpen(false)}
+                            onClick={() => {
+                              setIsDialogOpen(false);
+                              setError(null);
+                            }}
+                            disabled={isLoading}
                           >
                             Cancel
                           </Button>
-                          <Button type="submit">Create Project</Button>
+                          <Button 
+                            type="button"
+                            disabled={isLoading}
+                            onClick={(e) => {
+                              console.log('=== Submit button clicked directly ===');
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCreateProject(e);
+                            }}
+                          >
+                            {isLoading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Creating...
+                              </>
+                            ) : (
+                              'Create Project'
+                            )}
+                          </Button>
                         </div>
                       </form>
                     </DialogContent>
                   </Dialog>
+                  </>
                 )}
               </Box>
             </Box>
@@ -904,9 +1149,21 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         </div>
       )}
 
+      {/* Error Message */}
+      {error && (
+        <div className="px-6 py-2 bg-red-50 border-l-4 border-red-500">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+
       {/* Table and Pagination Area - Fixed Layout */}
       <div className="flex-1 flex flex-col px-6 py-3 bg-white overflow-hidden">
-        {projects.length === 0 ? (
+        {isLoading && parentProjects.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+            <p className="ml-3 text-muted-foreground">Loading projects...</p>
+          </div>
+        ) : parentProjects.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <p>No projects yet. Create your first project to get started.</p>
           </div>
@@ -984,7 +1241,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                         {/* Project ID - Show for both NPD and Approver */}
                         {(userRole === "NPD" || userRole === "Approver") && (
                           <TableCell sx={{ fontWeight: 600, color: userRole === "Approver" ? '#9333ea' : '#6b7280', fontSize: '0.75rem', py: 0.75 }}>
-                            {project.id}
+                            {project.projectNumber || project.id}
                           </TableCell>
                         )}
                         
@@ -1150,7 +1407,23 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
       {/* Edit Project Dialog - Only for Approver */}
       {userRole === "Approver" && (
-        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <Dialog 
+          open={isEditDialogOpen} 
+          onOpenChange={(open) => {
+            setIsEditDialogOpen(open);
+            if (!open) {
+              setSelectedProject(null);
+              setFormData({
+                customerPO: "",
+                partNumber: "",
+                toolNumber: "",
+                price: "",
+                targetDate: "",
+              });
+              setError(null);
+            }
+          }}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Edit Project</DialogTitle>
@@ -1158,7 +1431,20 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                 Update project details for {selectedProject?.customerPO}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleEditProject} className="space-y-4">
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleEditProject(e);
+              }} 
+              className="space-y-4"
+              noValidate
+            >
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="edit-customerPO">Customer PO Number</Label>
@@ -1170,6 +1456,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     }
                     placeholder="PO-2024-001"
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1182,6 +1469,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     }
                     placeholder="PN-12345"
                     required
+                    disabled={isLoading}
                   />
                 </div>
               </div>
@@ -1197,6 +1485,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     }
                     placeholder="TN-67890"
                     required
+                    disabled={isLoading}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1211,6 +1500,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     }
                     placeholder="50000.00"
                     required
+                    disabled={isLoading}
                   />
                 </div>
               </div>
@@ -1225,6 +1515,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     setFormData({ ...formData, targetDate: e.target.value })
                   }
                   required
+                  disabled={isLoading}
                 />
               </div>
 
@@ -1232,12 +1523,34 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsEditDialogOpen(false)}
+                  onClick={() => {
+                    setIsEditDialogOpen(false);
+                    setSelectedProject(null);
+                    setError(null);
+                  }}
+                  disabled={isLoading}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700">
-                  Save Changes
+                <Button 
+                  type="button"
+                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700"
+                  disabled={isLoading}
+                  onClick={(e) => {
+                    console.log('=== Edit Submit button clicked ===');
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleEditProject(e);
+                  }}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
                 </Button>
               </div>
             </form>

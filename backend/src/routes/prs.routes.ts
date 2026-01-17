@@ -22,7 +22,7 @@ const router = Router();
 router.get(
   '/',
   authenticate,
-  authorize(['Approver', 'NPD']),
+  authorize('Approver', 'NPD'),
   prsController.getAllPRs.bind(prsController)
 );
 
@@ -34,7 +34,7 @@ router.get(
 router.get(
   '/:id',
   authenticate,
-  authorize(['Approver', 'NPD']),
+  authorize('Approver', 'NPD'),
   prsController.getPRById.bind(prsController)
 );
 
@@ -46,7 +46,7 @@ router.get(
 router.post(
   '/',
   authenticate,
-  authorize(['NPD']),
+  authorize('NPD'),
   validate(createPRSchema),
   prsController.createPR.bind(prsController)
 );
@@ -59,7 +59,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  authorize(['NPD']),
+  authorize('NPD'),
   validate(updatePRSchema),
   prsController.updatePR.bind(prsController)
 );
@@ -72,7 +72,7 @@ router.put(
 router.post(
   '/:id/approve',
   authenticate,
-  authorize(['Approver']),
+  authorize('Approver'),
   validate(approvePRSchema),
   prsController.approvePR.bind(prsController)
 );
@@ -85,7 +85,7 @@ router.post(
 router.post(
   '/:id/reject',
   authenticate,
-  authorize(['Approver']),
+  authorize('Approver'),
   validate(rejectPRSchema),
   prsController.rejectPR.bind(prsController)
 );
@@ -98,7 +98,7 @@ router.post(
 router.post(
   '/:id/send-to-suppliers',
   authenticate,
-  authorize(['NPD']),
+  authorize('NPD'),
   prsController.sendToSuppliers.bind(prsController)
 );
 
@@ -110,7 +110,7 @@ router.post(
 router.delete(
   '/:id',
   authenticate,
-  authorize(['NPD']),
+  authorize('NPD'),
   prsController.deletePR.bind(prsController)
 );
 
@@ -122,7 +122,7 @@ router.delete(
 router.post(
   '/:id/award',
   authenticate,
-  authorize(['NPD']),
+  authorize('NPD'),
   validate(awardPRSchema),
   prsController.awardPR.bind(prsController)
 );
@@ -135,7 +135,7 @@ router.post(
 router.get(
   '/:prId/quotations/compare',
   authenticate,
-  authorize(['Approver', 'NPD']),
+  authorize('Approver', 'NPD'),
   quotationsController.compareQuotations.bind(quotationsController)
 );
 
