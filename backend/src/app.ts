@@ -18,6 +18,7 @@ import requestsRoutes from './routes/requests.routes';
 import reportsRoutes from './routes/reports.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import rolesRoutes from './routes/roles.routes';
+import departmentsRoutes from './routes/departments.routes';
 import path from 'path';
 
 // Load environment variables
@@ -65,6 +66,7 @@ app.use('/api/requests', requestsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/roles', rolesRoutes);
+app.use('/api/departments', departmentsRoutes);
 // etc.
 
 // 404 handler

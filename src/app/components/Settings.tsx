@@ -149,14 +149,12 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   // Form states for Add Department
   const [newDepartmentName, setNewDepartmentName] = useState("");
   const [newDepartmentHead, setNewDepartmentHead] = useState("");
-  const [newDepartmentMembers, setNewDepartmentMembers] = useState("");
   const [newDepartmentDescription, setNewDepartmentDescription] = useState("");
 
   // Form states for Edit Department
-  const [editDepartmentId, setEditDepartmentId] = useState<number | null>(null);
+  const [editDepartmentId, setEditDepartmentId] = useState<string | null>(null);
   const [editDepartmentName, setEditDepartmentName] = useState("");
   const [editDepartmentHead, setEditDepartmentHead] = useState("");
-  const [editDepartmentMembers, setEditDepartmentMembers] = useState("");
   const [editDepartmentDescription, setEditDepartmentDescription] = useState("");
 
   // Form states for Add BOM Item
@@ -181,14 +179,10 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   // User Management state
   const [users, setUsers] = useState<any[]>([]);
 
-  // Mock data for Departments
-  const [departments, setDepartments] = useState([
-    { id: 1, name: "NPD Team", head: "John Doe", members: 12, description: "New Product Development" },
-    { id: 2, name: "Approver Team", head: "Jane Smith", members: 5, description: "Project Approval & Management" },
-    { id: 3, name: "Maintenance Team", head: "Mike Johnson", members: 8, description: "Tool Maintenance" },
-    { id: 4, name: "Spares Team", head: "Sarah Williams", members: 6, description: "Spares Inventory Management" },
-    { id: 5, name: "Production Team", head: "David Brown", members: 25, description: "Production Operations" },
-  ]);
+  // Departments state
+  const [departments, setDepartments] = useState<any[]>([]);
+  const [isLoadingDepartments, setIsLoadingDepartments] = useState(false);
+  const [departmentsError, setDepartmentsError] = useState<string | null>(null);
 
   // Mock data for Part Number Configuration
   const [partNumberConfig, setPartNumberConfig] = useState([
@@ -382,6 +376,28 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
       fetchRoles();
     }
   }, [activeTab, userRole]);
+
+  // Fetch departments on mount
+  useEffect(() => {
+    const fetchDepartments = async () => {
+      setIsLoadingDepartments(true);
+      setDepartmentsError(null);
+      try {
+        const fetchedDepartments = await apiService.getDepartments();
+        setDepartments(fetchedDepartments);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch departments';
+        setDepartmentsError(errorMessage);
+        console.error('Error fetching departments:', err);
+      } finally {
+        setIsLoadingDepartments(false);
+      }
+    };
+
+    if (activeTab === "enterprise") {
+      fetchDepartments();
+    }
+  }, [activeTab]);
 
   // Transform backend user to frontend format
   const transformUser = (backendUser: any) => {
@@ -656,25 +672,39 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   };
 
   // Handle Add Department
-  const handleAddDepartment = () => {
+  const handleAddDepartment = async () => {
     if (!newDepartmentName || !newDepartmentHead) {
+      alert('Please fill in all required fields (Name and Head)');
       return;
     }
 
-    const newDepartment = {
-      id: departments.length + 1,
-      name: newDepartmentName,
-      head: newDepartmentHead,
-      members: parseInt(newDepartmentMembers) || 0,
-      description: newDepartmentDescription,
-    };
+    setIsLoadingDepartments(true);
+    setDepartmentsError(null);
+    try {
+      const departmentData = {
+        name: newDepartmentName,
+        head: newDepartmentHead,
+        description: newDepartmentDescription || undefined,
+      };
 
-    setDepartments([...departments, newDepartment]);
-    setAddDepartmentDialogOpen(false);
-    setNewDepartmentName("");
-    setNewDepartmentHead("");
-    setNewDepartmentMembers("");
-    setNewDepartmentDescription("");
+      await apiService.createDepartment(departmentData);
+      
+      // Refresh departments list
+      const fetchedDepartments = await apiService.getDepartments();
+      setDepartments(fetchedDepartments);
+      
+      setAddDepartmentDialogOpen(false);
+      setNewDepartmentName("");
+      setNewDepartmentHead("");
+      setNewDepartmentDescription("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create department';
+      setDepartmentsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating department:', err);
+    } finally {
+      setIsLoadingDepartments(false);
+    }
   };
 
   // Handle Edit Department
@@ -682,35 +712,69 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
     setEditDepartmentId(dept.id);
     setEditDepartmentName(dept.name);
     setEditDepartmentHead(dept.head);
-    setEditDepartmentMembers(dept.members.toString());
-    setEditDepartmentDescription(dept.description);
+    setEditDepartmentDescription(dept.description || "");
     setEditDepartmentDialogOpen(true);
   };
 
   // Handle Save Edit Department
-  const handleSaveEditDepartment = () => {
+  const handleSaveEditDepartment = async () => {
     if (!editDepartmentName || !editDepartmentHead || editDepartmentId === null) {
+      alert('Please fill in all required fields');
       return;
     }
 
-    setDepartments(departments.map(dept => 
-      dept.id === editDepartmentId 
-        ? {
-            ...dept,
-            name: editDepartmentName,
-            head: editDepartmentHead,
-            members: parseInt(editDepartmentMembers) || 0,
-            description: editDepartmentDescription,
-          }
-        : dept
-    ));
+    setIsLoadingDepartments(true);
+    setDepartmentsError(null);
+    try {
+      const departmentData = {
+        name: editDepartmentName,
+        head: editDepartmentHead,
+        description: editDepartmentDescription || undefined,
+      };
 
-    setEditDepartmentDialogOpen(false);
-    setEditDepartmentId(null);
-    setEditDepartmentName("");
-    setEditDepartmentHead("");
-    setEditDepartmentMembers("");
-    setEditDepartmentDescription("");
+      await apiService.updateDepartment(editDepartmentId, departmentData);
+      
+      // Refresh departments list
+      const fetchedDepartments = await apiService.getDepartments();
+      setDepartments(fetchedDepartments);
+      
+      setEditDepartmentDialogOpen(false);
+      setEditDepartmentId(null);
+      setEditDepartmentName("");
+      setEditDepartmentHead("");
+      setEditDepartmentDescription("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update department';
+      setDepartmentsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating department:', err);
+    } finally {
+      setIsLoadingDepartments(false);
+    }
+  };
+
+  // Handle Delete Department
+  const handleDeleteDepartment = async (departmentId: string, departmentName: string) => {
+    if (!window.confirm(`Are you sure you want to delete the department "${departmentName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsLoadingDepartments(true);
+    setDepartmentsError(null);
+    try {
+      await apiService.deleteDepartment(departmentId);
+      
+      // Refresh departments list
+      const fetchedDepartments = await apiService.getDepartments();
+      setDepartments(fetchedDepartments);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete department';
+      setDepartmentsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deleting department:', err);
+    } finally {
+      setIsLoadingDepartments(false);
+    }
   };
 
   // Handle Add BOM Item
@@ -1041,10 +1105,12 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Manage organizational departments and teams
                     </CardDescription>
                   </div>
-                  <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs" onClick={() => setAddDepartmentDialogOpen(true)}>
-                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                    Add Department
-                  </Button>
+                  {userRole === "Approver" && (
+                    <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs" onClick={() => setAddDepartmentDialogOpen(true)}>
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                      Add Department
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="p-4 pt-0">
@@ -1055,30 +1121,66 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       <TableHead className="text-xs">Department Head</TableHead>
                       <TableHead className="text-xs">Members</TableHead>
                       <TableHead className="text-xs">Description</TableHead>
-                      <TableHead className="text-xs text-right">Actions</TableHead>
+                      {userRole === "Approver" && (
+                        <TableHead className="text-xs text-right">Actions</TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {departments.map((dept) => (
-                      <TableRow key={dept.id}>
-                        <TableCell className="text-xs font-medium">{dept.name}</TableCell>
-                        <TableCell className="text-xs">{dept.head}</TableCell>
-                        <TableCell className="text-xs">
-                          <Badge variant="secondary" className="text-xs">{dept.members}</Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">{dept.description}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEditDepartment(dept)}>
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
+                    {isLoadingDepartments ? (
+                      <TableRow>
+                        <TableCell colSpan={userRole === "Approver" ? 5 : 4} className="text-center text-xs py-8">
+                          Loading departments...
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : departmentsError ? (
+                      <TableRow>
+                        <TableCell colSpan={userRole === "Approver" ? 5 : 4} className="text-center text-xs py-8 text-red-600">
+                          Error: {departmentsError}
+                        </TableCell>
+                      </TableRow>
+                    ) : departments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={userRole === "Approver" ? 5 : 4} className="text-center text-xs py-8 text-gray-500">
+                          No departments found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      departments.map((dept) => (
+                        <TableRow key={dept.id}>
+                          <TableCell className="text-xs font-medium">{dept.name}</TableCell>
+                          <TableCell className="text-xs">{dept.head}</TableCell>
+                          <TableCell className="text-xs">
+                            <Badge variant="secondary" className="text-xs">{dept.members || 0}</Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">{dept.description || '-'}</TableCell>
+                          {userRole === "Approver" && (
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0" 
+                                  onClick={() => handleEditDepartment(dept)}
+                                  disabled={isLoadingDepartments}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => handleDeleteDepartment(dept.id, dept.name)}
+                                  disabled={isLoadingDepartments}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
@@ -2154,17 +2256,6 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="newDepartmentMembers" className="text-xs">Members</Label>
-                <Input 
-                  id="newDepartmentMembers" 
-                  placeholder="e.g. 12"
-                  value={newDepartmentMembers}
-                  onChange={(e) => setNewDepartmentMembers(e.target.value)}
-                  className="h-8 text-xs"
-                  type="number"
-                />
-              </div>
-              <div className="space-y-1.5">
                 <Label htmlFor="newDepartmentDescription" className="text-xs">Description</Label>
                 <Input 
                   id="newDepartmentDescription" 
@@ -2182,9 +2273,19 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
                 onClick={handleAddDepartment}
+                disabled={isLoadingDepartments}
               >
-                <Plus className="w-3.5 h-3.5 mr-1.5" />
-                Add Department
+                {isLoadingDepartments ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Add Department
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -2221,17 +2322,6 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="editDepartmentMembers" className="text-xs">Members</Label>
-                <Input 
-                  id="editDepartmentMembers" 
-                  placeholder="e.g. 12"
-                  value={editDepartmentMembers}
-                  onChange={(e) => setEditDepartmentMembers(e.target.value)}
-                  className="h-8 text-xs"
-                  type="number"
-                />
-              </div>
-              <div className="space-y-1.5">
                 <Label htmlFor="editDepartmentDescription" className="text-xs">Description</Label>
                 <Input 
                   id="editDepartmentDescription" 
@@ -2249,9 +2339,19 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
                 onClick={handleSaveEditDepartment}
+                disabled={isLoadingDepartments}
               >
-                <Pencil className="w-3.5 h-3.5 mr-1.5" />
-                Save Changes
+                {isLoadingDepartments ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Pencil className="w-3.5 h-3.5 mr-1.5" />
+                    Save Changes
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

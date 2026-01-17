@@ -146,6 +146,8 @@ model User {
   userUpdatedBy         User?                 @relation("UserUpdated", fields: [updatedBy], references: [id])
   rolesCreated          Role[]                @relation("RolesCreated")
   rolesUpdated          Role[]                @relation("RolesUpdated")
+  departmentsCreated    Department[]          @relation("DepartmentsCreated")
+  departmentsUpdated    Department[]          @relation("DepartmentsUpdated")
 
   @@index([email])
   @@index([role])
@@ -173,6 +175,25 @@ model Role {
   @@index([name])
   @@index([isActive])
   @@map("roles")
+}
+
+// Departments table - Manage organizational departments
+model Department {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(100)
+  head        String   @db.VarChar(255)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  creator       User?  @relation("DepartmentsCreated", fields: [createdBy], references: [id])
+  updater       User?  @relation("DepartmentsUpdated", fields: [updatedBy], references: [id])
+
+  @@index([name])
+  @@map("departments")
 }
 
 // Projects table

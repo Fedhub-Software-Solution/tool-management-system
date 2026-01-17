@@ -976,6 +976,57 @@ class ApiService {
 
     return response.data!;
   }
+
+  // ========== Departments API ==========
+  async getDepartments(): Promise<any[]> {
+    const response = await this.request<any>('/departments', {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async getDepartmentById(id: string): Promise<any> {
+    const response = await this.request<any>(`/departments/${id}`, {
+      method: 'GET',
+    });
+
+    return response.data!;
+  }
+
+  async createDepartment(departmentData: {
+    name: string;
+    head: string;
+    description?: string;
+  }): Promise<any> {
+    const response = await this.request<any>('/departments', {
+      method: 'POST',
+      body: JSON.stringify(departmentData),
+    });
+
+    return response.data!;
+  }
+
+  async updateDepartment(id: string, departmentData: {
+    name?: string;
+    head?: string;
+    description?: string;
+  }): Promise<any> {
+    const response = await this.request<any>(`/departments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(departmentData),
+    });
+
+    return response.data!;
+  }
+
+  async deleteDepartment(id: string): Promise<any> {
+    const response = await this.request<any>(`/departments/${id}`, {
+      method: 'DELETE',
+    });
+
+    return response.data!;
+  }
 }
 
 export const apiService = new ApiService();
