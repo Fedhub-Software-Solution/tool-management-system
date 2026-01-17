@@ -66,15 +66,18 @@ import { format } from "date-fns";
 import { DateFilterControl, type DateFilter, filterByDateRange, groupByTimePeriod, sortTimePeriodKeys } from "./DateFilterControl";
 
 export interface Project {
-  id: string;
+  id: string; // UUID from backend
+  projectNumber?: string; // Project number like "PROJ-001" (from backend)
   customerPO: string;
   partNumber: string;
   toolNumber: string;
   price: number;
   targetDate: string;
   status: string;
-  createdBy: string;
+  description?: string;
+  createdBy: string | { id: string; firstName: string; lastName: string }; // Can be string or object from backend
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PR {

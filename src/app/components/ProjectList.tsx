@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -6,9 +6,10 @@ import { Label } from "./ui/label";
 import { Badge } from "./ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "./ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
-import { Plus, Calendar, DollarSign, Hash, FolderOpen, CheckCircle, Clock, Eye, Edit, Trash2, Download, Search, Filter, X, FileText, ArrowLeft, ArrowUpDown } from "lucide-react";
+import { Plus, Calendar, DollarSign, Hash, FolderOpen, CheckCircle, Clock, Eye, Edit, Trash2, Download, Search, Filter, X, FileText, ArrowLeft, ArrowUpDown, AlertTriangle, Bell, PauseCircle, Loader2 } from "lucide-react";
 import type { Project, PR } from "./Dashboard";
 import { ProjectDetailView } from "./ProjectDetailView";
+import { apiService } from "../services/api";
 import {
   TextField,
   MenuItem,
@@ -44,7 +45,9 @@ interface ProjectListProps {
   prs: PR[];
 }
 
-export function ProjectList({ projects, setProjects, userRole, prs }: ProjectListProps) {
+export function ProjectList({ projects: parentProjects, setProjects: setParentProjects, userRole, prs }: ProjectListProps) {
+  // Internal state for displayed projects (paginated)
+  const [displayedProjects, setDisplayedProjects] = useState<Project[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'detail'>('list');
@@ -58,6 +61,9 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     key: keyof Project | null;
     direction: 'asc' | 'desc';
   }>({ key: null, direction: 'asc' });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pagination, setPagination] = useState<{ page: number; limit: number; total: number; totalPages: number } | null>(null);
   
   const [formData, setFormData] = useState({
     customerPO: "",
@@ -67,38 +73,135 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     targetDate: "",
   });
 
-  const handleCreateProject = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const newProject: Project = {
-      id: `PRJ-${Date.now()}`,
-      customerPO: formData.customerPO,
-      partNumber: formData.partNumber,
-      toolNumber: formData.toolNumber,
-      price: parseFloat(formData.price),
-      targetDate: formData.targetDate,
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: new Date().toISOString(),
+  // Transform backend project to frontend format
+  const transformProject = (backendProject: any): Project => {
+    return {
+      id: backendProject.id,
+      projectNumber: backendProject.projectNumber,
+      customerPO: backendProject.customerPO,
+      partNumber: backendProject.partNumber,
+      toolNumber: backendProject.toolNumber,
+      price: parseFloat(backendProject.price),
+      targetDate: backendProject.targetDate,
+      status: backendProject.status,
+      description: backendProject.description,
+      createdBy: typeof backendProject.createdBy === 'object' 
+        ? `${backendProject.createdBy.firstName} ${backendProject.createdBy.lastName}`
+        : backendProject.createdBy || 'Unknown',
+      createdAt: backendProject.createdAt,
+      updatedAt: backendProject.updatedAt,
     };
-
-    setProjects([...projects, newProject]);
-    setIsDialogOpen(false);
-    setFormData({
-      customerPO: "",
-      partNumber: "",
-      toolNumber: "",
-      price: "",
-      targetDate: "",
-    });
   };
 
-  const handleEditProject = (e: React.FormEvent) => {
+  // Fetch projects from API
+  const fetchProjects = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const filters: any = {
+        page: currentPage,
+        limit: itemsPerPage,
+      };
+
+      if (statusFilter !== "All") {
+        filters.status = statusFilter;
+      }
+
+      if (searchQuery) {
+        filters.search = searchQuery;
+      }
+
+      if (sortConfig.key) {
+        filters.sortBy = sortConfig.key === 'id' ? 'projectNumber' : sortConfig.key;
+        filters.sortOrder = sortConfig.direction;
+      }
+
+      const response = await apiService.getProjects(filters);
+      const transformedProjects = response.data.map(transformProject);
+      setDisplayedProjects(transformedProjects);
+      
+      if (response.pagination) {
+        setPagination(response.pagination);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      console.error('Error fetching projects:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentPage, statusFilter, searchQuery, sortConfig, itemsPerPage]);
+
+  // Fetch projects on mount and when filters change
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  // Debounce search query - reset to page 1 when search changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (currentPage !== 1) {
+        setCurrentPage(1);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleCreateProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const newProjectData = {
+        customerPO: formData.customerPO,
+        partNumber: formData.partNumber,
+        toolNumber: formData.toolNumber,
+        price: parseFloat(formData.price),
+        targetDate: formData.targetDate,
+        status: "Active",
+      };
+
+      const createdProject = await apiService.createProject(newProjectData);
+      const transformedProject = transformProject(createdProject);
+      
+      // Refresh the displayed list and parent projects for Dashboard
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+      
+      setIsDialogOpen(false);
+      setFormData({
+        customerPO: "",
+        partNumber: "",
+        toolNumber: "",
+        price: "",
+        targetDate: "",
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+      console.error('Error creating project:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (selectedProject) {
-      const updatedProject: Project = {
-        ...selectedProject,
+    if (!selectedProject) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const updateData = {
         customerPO: formData.customerPO,
         partNumber: formData.partNumber,
         toolNumber: formData.toolNumber,
@@ -106,7 +209,19 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         targetDate: formData.targetDate,
       };
 
-      setProjects(projects.map(p => p.id === selectedProject.id ? updatedProject : p));
+      await apiService.updateProject(selectedProject.id, updateData);
+      
+      // Refresh the displayed list and parent projects for Dashboard
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+      
       setIsEditDialogOpen(false);
       setFormData({
         customerPO: "",
@@ -115,12 +230,39 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         price: "",
         targetDate: "",
       });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update project');
+      console.error('Error updating project:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleDeleteProject = (projectId: string) => {
-    if (confirm("Are you sure you want to delete this project?")) {
-      setProjects(projects.filter(p => p.id !== projectId));
+  const handleDeleteProject = async (projectId: string) => {
+    if (!confirm("Are you sure you want to delete this project?")) {
+      return;
+    }
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      await apiService.deleteProject(projectId);
+      // Refresh the displayed list and parent projects for Dashboard
+      await fetchProjects();
+      // Also refresh parent projects for Dashboard stats
+      try {
+        const allProjectsResponse = await apiService.getProjects({ limit: 1000 });
+        const allTransformedProjects = allProjectsResponse.data.map(transformProject);
+        setParentProjects(allTransformedProjects);
+      } catch (err) {
+        console.error('Error refreshing parent projects:', err);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete project');
+      console.error('Error deleting project:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -143,14 +285,14 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
 
   const handleDownloadProject = (project: Project) => {
     const data = {
-      "Project ID": project.id,
+      "Project ID": project.projectNumber || project.id,
       "Customer PO": project.customerPO,
       "Part Number": project.partNumber,
       "Tool Number": project.toolNumber,
-      "Price": `$${project.price.toLocaleString()}`,
+      "Price": `₹${project.price.toLocaleString()}`,
       "Target Date": new Date(project.targetDate).toLocaleDateString(),
       "Status": project.status,
-      "Created By": project.createdBy,
+      "Created By": typeof project.createdBy === 'string' ? project.createdBy : `${project.createdBy.firstName} ${project.createdBy.lastName}`,
       "Created At": new Date(project.createdAt).toLocaleDateString(),
     };
 
@@ -159,7 +301,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${project.id}_${project.customerPO}.json`;
+    link.download = `${project.projectNumber || project.id}_${project.customerPO}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -172,21 +314,13 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     setPartNumberFilter("All");
   };
 
-  // Get unique part numbers for filter
-  const uniquePartNumbers = Array.from(new Set(projects.map(p => p.partNumber))).sort();
+  // Get unique part numbers for filter (from displayed projects)
+  const uniquePartNumbers = Array.from(new Set(displayedProjects.map(p => p.partNumber))).sort();
 
-  // Filter projects
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = 
-      project.customerPO.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.partNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      project.toolNumber.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = statusFilter === "All" || project.status === statusFilter;
+  // Client-side filtering for part number (since backend doesn't support it yet)
+  const filteredProjects = displayedProjects.filter(project => {
     const matchesPartNumber = partNumberFilter === "All" || project.partNumber === partNumberFilter;
-
-    return matchesSearch && matchesStatus && matchesPartNumber;
+    return matchesPartNumber;
   });
 
   const getStatusColor = (status: string) => {
@@ -202,11 +336,54 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
     }
   };
 
-  // Calculate KPIs
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === "Active").length;
-  const completedProjects = projects.filter(p => p.status === "Completed").length;
-  const totalBudget = projects.reduce((sum, p) => sum + p.price, 0);
+  // Calculate KPIs - fetch all projects for accurate stats
+  const [kpiStats, setKpiStats] = useState({
+    total: 0,
+    active: 0,
+    completed: 0,
+    onHold: 0,
+    overdue: 0,
+    upcoming: 0,
+    budget: 0,
+  });
+
+  useEffect(() => {
+    const fetchKpiStats = async () => {
+      try {
+        const response = await apiService.getProjects({ limit: 1000 }); // Get all for stats
+        const allProjects = response.data.map(transformProject);
+        // Update parent projects for Dashboard
+        setParentProjects(allProjects);
+        
+        const now = new Date();
+        const nextWeek = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+        
+        const stats = {
+          total: response.pagination?.total || allProjects.length,
+          active: allProjects.filter(p => p.status === "Active").length,
+          completed: allProjects.filter(p => p.status === "Completed").length,
+          onHold: allProjects.filter(p => p.status === "On Hold").length,
+          overdue: allProjects.filter(p => {
+            const targetDate = new Date(p.targetDate);
+            return p.status === "Active" && targetDate < now;
+          }).length,
+          upcoming: allProjects.filter(p => {
+            const targetDate = new Date(p.targetDate);
+            return p.status === "Active" && targetDate >= now && targetDate <= nextWeek;
+          }).length,
+          budget: allProjects.reduce((sum, p) => sum + p.price, 0),
+        };
+        
+        setKpiStats(stats);
+      } catch (err) {
+        console.error('Error fetching KPI stats:', err);
+      }
+    };
+    
+    fetchKpiStats();
+  }, []);
+
+  const { total: totalProjects, active: activeProjects, completed: completedProjects, onHold, overdue, upcoming, budget: totalBudget } = kpiStats;
 
   // Show detail view if in detail mode
   if (viewMode === 'detail' && selectedProject) {
@@ -236,7 +413,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
           {/* Total Projects */}
           <div className="flex flex-col items-center">
             <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-violet-100 shadow-md flex flex-col items-center justify-center border-2 border-white">
@@ -273,6 +450,42 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
             <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Finished</p>
           </div>
 
+          {/* On Hold Projects */}
+          <div className="flex flex-col items-center">
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-yellow-100 to-amber-100 shadow-md flex flex-col items-center justify-center border-2 border-white">
+              <div className="absolute -top-1 -right-1 p-1.5 bg-yellow-600 rounded-full shadow-sm">
+                <PauseCircle className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="text-3xl font-bold text-yellow-600">{onHold}</div>
+              <p className="text-[11px] text-yellow-700 mt-0.5 font-semibold">On Hold</p>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Paused</p>
+          </div>
+
+          {/* Overdue Projects */}
+          <div className="flex flex-col items-center">
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-red-100 to-rose-100 shadow-md flex flex-col items-center justify-center border-2 border-white">
+              <div className="absolute -top-1 -right-1 p-1.5 bg-red-600 rounded-full shadow-sm">
+                <AlertTriangle className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="text-3xl font-bold text-red-600">{overdue}</div>
+              <p className="text-[11px] text-red-700 mt-0.5 font-semibold">Overdue</p>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Late</p>
+          </div>
+
+          {/* Upcoming Projects */}
+          <div className="flex flex-col items-center">
+            <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-purple-100 to-indigo-100 shadow-md flex flex-col items-center justify-center border-2 border-white">
+              <div className="absolute -top-1 -right-1 p-1.5 bg-purple-600 rounded-full shadow-sm">
+                <Bell className="w-3.5 h-3.5 text-white" />
+              </div>
+              <div className="text-3xl font-bold text-purple-600">{upcoming}</div>
+              <p className="text-[11px] text-purple-700 mt-0.5 font-semibold">Upcoming</p>
+            </div>
+            <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Next 7 Days</p>
+          </div>
+
           {/* Total Budget */}
           {userRole === "Approver" && (
             <div className="flex flex-col items-center">
@@ -280,7 +493,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                 <div className="absolute -top-1 -right-1 p-1.5 bg-amber-600 rounded-full shadow-sm">
                   <DollarSign className="w-3.5 h-3.5 text-white" />
                 </div>
-                <div className="text-xl font-bold text-amber-600">${(totalBudget / 1000).toFixed(0)}K</div>
+                <div className="text-xl font-bold text-amber-600">₹{(totalBudget / 1000).toFixed(0)}K</div>
                 <p className="text-[11px] text-amber-700 mt-0.5 font-semibold">Budget</p>
               </div>
               <p className="text-[10px] text-slate-600 mt-1.5 font-medium">Total Planned</p>
@@ -449,7 +662,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                 {/* Results Counter Chip */}
                 <Chip 
                   icon={<FilterListIcon sx={{ fontSize: '14px !important' }} />}
-                  label={`${filteredProjects.length}/${totalProjects}`}
+                  label={`${filteredProjects.length}/${pagination?.total || totalProjects}`}
                   color="primary"
                   variant="outlined"
                   size="small"
@@ -591,9 +804,21 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
         </div>
       )}
 
+      {/* Error Message */}
+      {error && (
+        <div className="px-6 py-2 bg-red-50 border-l-4 border-red-500">
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+
       {/* Table and Pagination Area - Fixed Layout */}
       <div className="flex-1 flex flex-col px-6 py-3 bg-white overflow-hidden">
-        {projects.length === 0 ? (
+        {isLoading && displayedProjects.length === 0 ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+            <p className="ml-3 text-muted-foreground">Loading projects...</p>
+          </div>
+        ) : displayedProjects.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
             <p>No projects yet. Create your first project to get started.</p>
           </div>
@@ -644,7 +869,14 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                     <col style={{ width: userRole === "Approver" ? '20%' : '30%' }} />
                   </colgroup>
                   <TableBody>
-                    {filteredProjects.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((project, index) => (
+                    {isLoading && (
+                      <TableRow>
+                        <TableCell colSpan={userRole === "Approver" ? 8 : 7} align="center" sx={{ py: 4 }}>
+                          <Loader2 className="w-6 h-6 animate-spin text-purple-600 mx-auto" />
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!isLoading && filteredProjects.map((project, index) => (
                       <TableRow
                         key={project.id}
                         sx={{
@@ -657,7 +889,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                         }}
                       >
                         <TableCell sx={{ fontWeight: 600, color: '#9333ea', fontSize: '0.75rem', py: 0.75 }}>
-                          {project.id}
+                          {project.projectNumber || project.id}
                         </TableCell>
                         <TableCell sx={{ fontWeight: 600, color: '#4f46e5', fontSize: '0.75rem', py: 0.75 }}>
                           {project.customerPO}
@@ -781,13 +1013,14 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
             {filteredProjects.length > 0 && (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 1.5, gap: 2, flexShrink: 0 }}>
                 <Pagination
-                  count={Math.ceil(filteredProjects.length / itemsPerPage)}
+                  count={pagination?.totalPages || Math.ceil(filteredProjects.length / itemsPerPage)}
                   page={currentPage}
                   onChange={(event, value) => setCurrentPage(value)}
                   color="primary"
                   size="small"
                   showFirstButton
                   showLastButton
+                  disabled={isLoading}
                   sx={{
                     '& .MuiPaginationItem-root': {
                       fontWeight: 600,
@@ -801,7 +1034,7 @@ export function ProjectList({ projects, setProjects, userRole, prs }: ProjectLis
                   }}
                 />
                 <Chip 
-                  label={`Page ${currentPage} of ${Math.ceil(filteredProjects.length / itemsPerPage)}`}
+                  label={`Page ${currentPage} of ${pagination?.totalPages || Math.ceil(filteredProjects.length / itemsPerPage)}`}
                   size="small"
                   variant="outlined"
                   sx={{ fontWeight: 600, fontSize: '0.7rem', height: 24 }}

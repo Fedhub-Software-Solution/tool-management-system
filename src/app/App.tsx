@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -32,141 +32,44 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Shared state across all roles with comprehensive static data
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: "PROJ-001",
-      customerPO: "PO-CUST-2024-045",
-      partNumber: "PN-12345",
-      toolNumber: "TN-9001",
-      price: 125000,
-      targetDate: "2024-03-15",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-07-10T10:30:00Z"
-    },
-    {
-      id: "PROJ-002",
-      customerPO: "PO-CUST-2024-067",
-      partNumber: "PN-67890",
-      toolNumber: "TN-9002",
-      price: 85000,
-      targetDate: "2024-03-20",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-07-15T14:20:00Z"
-    },
-    {
-      id: "PROJ-003",
-      customerPO: "PO-CUST-2024-089",
-      partNumber: "PN-12345",
-      toolNumber: "TN-9003",
-      price: 95000,
-      targetDate: "2024-04-10",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-08-05T09:15:00Z"
-    },
-    {
-      id: "PROJ-004",
-      customerPO: "PO-CUST-2024-102",
-      partNumber: "PN-34567",
-      toolNumber: "TN-9004",
-      price: 65000,
-      targetDate: "2024-04-25",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-08-12T11:45:00Z"
-    },
-    {
-      id: "PROJ-005",
-      customerPO: "PO-CUST-2024-115",
-      partNumber: "PN-67890",
-      toolNumber: "TN-9005",
-      price: 78000,
-      targetDate: "2024-05-05",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-09-01T08:30:00Z"
-    },
-    {
-      id: "PROJ-006",
-      customerPO: "PO-CUST-2024-128",
-      partNumber: "PN-45678",
-      toolNumber: "TN-9006",
-      price: 110000,
-      targetDate: "2024-05-15",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-09-08T13:20:00Z"
-    },
-    {
-      id: "PROJ-007",
-      customerPO: "PO-CUST-2024-142",
-      partNumber: "PN-23456",
-      toolNumber: "TN-9007",
-      price: 92000,
-      targetDate: "2024-05-28",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-10-03T09:45:00Z"
-    },
-    {
-      id: "PROJ-008",
-      customerPO: "PO-CUST-2024-156",
-      partNumber: "PN-78901",
-      toolNumber: "TN-9008",
-      price: 135000,
-      targetDate: "2024-06-10",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-10-15T11:30:00Z"
-    },
-    {
-      id: "PROJ-009",
-      customerPO: "PO-CUST-2024-163",
-      partNumber: "PN-56789",
-      toolNumber: "TN-9009",
-      price: 72000,
-      targetDate: "2024-06-20",
-      status: "Completed",
-      createdBy: "Approver Team",
-      createdAt: "2024-11-05T08:15:00Z"
-    },
-    {
-      id: "PROJ-010",
-      customerPO: "PO-CUST-2024-178",
-      partNumber: "PN-34512",
-      toolNumber: "TN-9010",
-      price: 88000,
-      targetDate: "2024-06-30",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-11-12T14:00:00Z"
-    },
-    {
-      id: "PROJ-011",
-      customerPO: "PO-CUST-2024-185",
-      partNumber: "PN-12398",
-      toolNumber: "TN-9011",
-      price: 105000,
-      targetDate: "2024-07-12",
-      status: "Active",
-      createdBy: "Approver Team",
-      createdAt: "2024-12-01T10:20:00Z"
-    },
-    {
-      id: "PROJ-012",
-      customerPO: "PO-CUST-2024-192",
-      partNumber: "PN-67823",
-      toolNumber: "TN-9012",
-      price: 98000,
-      targetDate: "2024-07-25",
-      status: "Completed",
-      createdBy: "Approver Team",
-      createdAt: "2023-11-15T09:30:00Z"
-    }
-  ]);
+  // Shared state across all roles - projects will be fetched from API
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Fetch all projects for Dashboard stats when user is logged in
+  useEffect(() => {
+    const fetchAllProjects = async () => {
+      if (!selectedRole || !apiService.isAuthenticated()) return;
+      
+      try {
+        const response = await apiService.getProjects({ limit: 1000 }); // Get all for Dashboard stats
+        const transformProject = (backendProject: any): Project => {
+          return {
+            id: backendProject.id,
+            projectNumber: backendProject.projectNumber,
+            customerPO: backendProject.customerPO,
+            partNumber: backendProject.partNumber,
+            toolNumber: backendProject.toolNumber,
+            price: parseFloat(backendProject.price),
+            targetDate: backendProject.targetDate,
+            status: backendProject.status,
+            description: backendProject.description,
+            createdBy: typeof backendProject.createdBy === 'object' 
+              ? `${backendProject.createdBy.firstName} ${backendProject.createdBy.lastName}`
+              : backendProject.createdBy || 'Unknown',
+            createdAt: backendProject.createdAt,
+            updatedAt: backendProject.updatedAt,
+          };
+        };
+        const transformedProjects = response.data.map(transformProject);
+        setProjects(transformedProjects);
+      } catch (err) {
+        console.error('Error fetching projects for Dashboard:', err);
+        // Keep empty array on error
+      }
+    };
+
+    fetchAllProjects();
+  }, [selectedRole]);
 
   const [prs, setPRs] = useState<PR[]>([
     // Awarded PR with complete workflow
