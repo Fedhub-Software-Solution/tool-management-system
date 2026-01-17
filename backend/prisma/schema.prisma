@@ -144,12 +144,35 @@ model User {
   userCreatedBy         User?                 @relation("UserCreated", fields: [createdBy], references: [id])
   usersUpdated          User[]                @relation("UserUpdated")
   userUpdatedBy         User?                 @relation("UserUpdated", fields: [updatedBy], references: [id])
+  rolesCreated          Role[]                @relation("RolesCreated")
+  rolesUpdated          Role[]                @relation("RolesUpdated")
 
   @@index([email])
   @@index([role])
   @@index([employeeId])
   @@index([isActive])
   @@map("users")
+}
+
+// Roles table - Manage role configurations
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique @db.VarChar(50)
+  description String?  @db.Text
+  permissions String[] @db.VarChar(100)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  creator       User?  @relation("RolesCreated", fields: [createdBy], references: [id])
+  updater       User?  @relation("RolesUpdated", fields: [updatedBy], references: [id])
+
+  @@index([name])
+  @@index([isActive])
+  @@map("roles")
 }
 
 // Projects table

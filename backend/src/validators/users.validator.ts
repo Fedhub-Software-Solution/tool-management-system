@@ -19,5 +19,9 @@ export const updateUserSchema = z.object({
   lastName: z.string().min(1, 'Last name is required').optional(),
   phone: z.string().optional(),
   department: z.string().optional(),
+  role: z.nativeEnum(UserRole, {
+    errorMap: () => ({ message: 'Invalid role' }),
+  }).optional(),
+  isActive: z.boolean().optional(),
 });
 

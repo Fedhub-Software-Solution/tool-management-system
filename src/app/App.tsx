@@ -8,7 +8,7 @@ import { Dashboard } from "./components/Dashboard";
 import { LeftNav } from "./components/LeftNav";
 import { ProfileDialog } from "./components/ProfileDialog";
 import type { Project, PR, ToolHandoverRecord, InventoryItem, SparesRequest, Supplier } from "./components/Dashboard";
-import { UserCircle, Building2, Sparkles, Settings, Bell, LogOut } from "lucide-react";
+import { UserCircle, Building2, Sparkles, Settings, Bell, LogOut, Mail, Lock } from "lucide-react";
 import { apiService } from "./services/api";
 import {
   DropdownMenu,
@@ -34,6 +34,24 @@ function App() {
   
   // Shared state across all roles - projects will be fetched from API
   const [projects, setProjects] = useState<Project[]>([]);
+
+  // Restore authentication state on page load/refresh
+  useEffect(() => {
+    const restoreAuth = () => {
+      // Check if user is authenticated and has a valid token
+      if (apiService.isAuthenticated()) {
+        const user = apiService.getCurrentUser();
+        if (user && user.role) {
+          // Restore the selected role from localStorage
+          const userRole = user.role as UserRole;
+          setSelectedRole(userRole);
+          setActiveTab("dashboard");
+        }
+      }
+    };
+
+    restoreAuth();
+  }, []); // Run only once on mount
 
   // Fetch all projects for Dashboard stats when user is logged in
   useEffect(() => {
@@ -1142,7 +1160,7 @@ function App() {
             <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-semibold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <Mail className="w-4 h-4 text-indigo-600" />
                   Email Address
                 </Label>
                 <Input
@@ -1159,7 +1177,7 @@ function App() {
 
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-semibold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <Lock className="w-4 h-4 text-indigo-600" />
                   Password
                 </Label>
                 <Input

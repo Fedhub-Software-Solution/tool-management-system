@@ -852,6 +852,130 @@ class ApiService {
 
     return response.data!;
   }
+
+  // ========== Users API ==========
+  async getUsers(includeInactive = false): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    if (includeInactive) {
+      queryParams.append('includeInactive', 'true');
+    }
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/users${queryString ? `?${queryString}` : ''}`;
+    
+    const response = await this.request<any>(endpoint, {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async getUserById(id: string): Promise<any> {
+    const response = await this.request<any>(`/users/${id}`, {
+      method: 'GET',
+    });
+
+    return response.data!;
+  }
+
+  async createUser(userData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    employeeId?: string;
+    phone?: string;
+    department?: string;
+  }): Promise<any> {
+    const response = await this.request<any>('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+
+    return response.data!;
+  }
+
+  async updateUser(id: string, userData: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    department?: string;
+    role?: string;
+    isActive?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+
+    return response.data!;
+  }
+
+  async deactivateUser(id: string): Promise<any> {
+    // Deactivate user by setting isActive to false
+    return this.updateUser(id, { isActive: false });
+  }
+
+  // ========== Roles API ==========
+  async getRoles(includeInactive = false): Promise<any[]> {
+    const queryParams = new URLSearchParams();
+    if (includeInactive) {
+      queryParams.append('includeInactive', 'true');
+    }
+    
+    const queryString = queryParams.toString();
+    const endpoint = `/roles${queryString ? `?${queryString}` : ''}`;
+    
+    const response = await this.request<any>(endpoint, {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async getRoleById(id: string): Promise<any> {
+    const response = await this.request<any>(`/roles/${id}`, {
+      method: 'GET',
+    });
+
+    return response.data!;
+  }
+
+  async createRole(roleData: {
+    name: string;
+    description?: string;
+    permissions?: string[];
+  }): Promise<any> {
+    const response = await this.request<any>('/roles', {
+      method: 'POST',
+      body: JSON.stringify(roleData),
+    });
+
+    return response.data!;
+  }
+
+  async updateRole(id: string, roleData: {
+    name?: string;
+    description?: string;
+    permissions?: string[];
+    isActive?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>(`/roles/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(roleData),
+    });
+
+    return response.data!;
+  }
+
+  async deleteRole(id: string): Promise<any> {
+    const response = await this.request<any>(`/roles/${id}`, {
+      method: 'DELETE',
+    });
+
+    return response.data!;
+  }
 }
 
 export const apiService = new ApiService();

@@ -26,7 +26,9 @@ import {
   Trash2,
   ShieldCheck
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { apiService } from "../services/api";
+import { Loader2 } from "lucide-react";
 
 type UserRole = "Approver" | "NPD" | "Maintenance" | "Spares" | "Indentor";
 
@@ -72,6 +74,7 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [partNumberDialogOpen, setPartNumberDialogOpen] = useState(false);
   const [toolNumberDialogOpen, setToolNumberDialogOpen] = useState(false);
   const [addUserDialogOpen, setAddUserDialogOpen] = useState(false);
+  const [editUserDialogOpen, setEditUserDialogOpen] = useState(false);
   const [addRoleDialogOpen, setAddRoleDialogOpen] = useState(false);
   const [addDepartmentDialogOpen, setAddDepartmentDialogOpen] = useState(false);
   const [editDepartmentDialogOpen, setEditDepartmentDialogOpen] = useState(false);
@@ -79,6 +82,18 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [editBomDialogOpen, setEditBomDialogOpen] = useState(false);
   const [editPartNumberDialogOpen, setEditPartNumberDialogOpen] = useState(false);
   const [editToolNumberDialogOpen, setEditToolNumberDialogOpen] = useState(false);
+
+  // Loading and error states
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  
+  // Roles state
+  const [roles, setRoles] = useState<any[]>([]);
+  const [isLoadingRoles, setIsLoadingRoles] = useState(false);
+  const [rolesError, setRolesError] = useState<string | null>(null);
+  const [editRoleDialogOpen, setEditRoleDialogOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<any>(null);
 
   // Form states for Part Number
   const [newPartPrefix, setNewPartPrefix] = useState("");
@@ -103,16 +118,33 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [editToolAutoIncrement, setEditToolAutoIncrement] = useState(true);
 
   // Form states for Add User
-  const [newUserName, setNewUserName] = useState("");
+  const [newUserFirstName, setNewUserFirstName] = useState("");
+  const [newUserLastName, setNewUserLastName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserRole, setNewUserRole] = useState<UserRole>("NPD");
+  const [newUserEmployeeId, setNewUserEmployeeId] = useState("");
+  const [newUserPhone, setNewUserPhone] = useState("");
   const [newUserDepartment, setNewUserDepartment] = useState("");
-  const [newUserStatus, setNewUserStatus] = useState("Active");
+
+  // Form states for Edit User
+  const [editUserFirstName, setEditUserFirstName] = useState("");
+  const [editUserLastName, setEditUserLastName] = useState("");
+  const [editUserPhone, setEditUserPhone] = useState("");
+  const [editUserDepartment, setEditUserDepartment] = useState("");
+  const [editUserRole, setEditUserRole] = useState<UserRole>("NPD");
+  const [editUserStatus, setEditUserStatus] = useState("Active");
 
   // Form states for Add Role
   const [newRoleName, setNewRoleName] = useState("");
   const [newRoleDescription, setNewRoleDescription] = useState("");
   const [newRolePermissions, setNewRolePermissions] = useState("");
+
+  // Form states for Edit Role
+  const [editRoleName, setEditRoleName] = useState("");
+  const [editRoleDescription, setEditRoleDescription] = useState("");
+  const [editRolePermissions, setEditRolePermissions] = useState("");
+  const [editRoleStatus, setEditRoleStatus] = useState("Active");
 
   // Form states for Add Department
   const [newDepartmentName, setNewDepartmentName] = useState("");
@@ -146,14 +178,8 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [editBomPartNumber, setEditBomPartNumber] = useState("");
   const [editBomToolNumber, setEditBomToolNumber] = useState("");
 
-  // Mock data for User Management
-  const [users, setUsers] = useState([
-    { id: 1, name: "John Doe", email: "john.doe@company.com", role: "NPD", department: "NPD Team", status: "Active" },
-    { id: 2, name: "Jane Smith", email: "jane.smith@company.com", role: "Approver", department: "Approver Team", status: "Active" },
-    { id: 3, name: "Mike Johnson", email: "mike.johnson@company.com", role: "Maintenance", department: "Maintenance Team", status: "Active" },
-    { id: 4, name: "Sarah Williams", email: "sarah.williams@company.com", role: "Spares", department: "Spares Team", status: "Active" },
-    { id: 5, name: "David Brown", email: "david.brown@company.com", role: "Indentor", department: "Production Team", status: "Inactive" },
-  ]);
+  // User Management state
+  const [users, setUsers] = useState<any[]>([]);
 
   // Mock data for Departments
   const [departments, setDepartments] = useState([
@@ -309,41 +335,324 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
     setEditToolAutoIncrement(true);
   };
 
+  // Fetch users on mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if (userRole !== "Approver") return; // Only Approvers can manage users
+      
+      setIsLoadingUsers(true);
+      setUsersError(null);
+      try {
+        const fetchedUsers = await apiService.getUsers(true); // Include inactive users
+        setUsers(fetchedUsers);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch users';
+        setUsersError(errorMessage);
+        console.error('Error fetching users:', err);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+
+    if (activeTab === "user-management") {
+      fetchUsers();
+    }
+  }, [activeTab, userRole]);
+
+  // Fetch roles on mount
+  useEffect(() => {
+    const fetchRoles = async () => {
+      if (userRole !== "Approver") return; // Only Approvers can manage roles
+      
+      setIsLoadingRoles(true);
+      setRolesError(null);
+      try {
+        const fetchedRoles = await apiService.getRoles(true); // Include inactive roles
+        setRoles(fetchedRoles);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch roles';
+        setRolesError(errorMessage);
+        console.error('Error fetching roles:', err);
+      } finally {
+        setIsLoadingRoles(false);
+      }
+    };
+
+    if (activeTab === "user-management") {
+      fetchRoles();
+    }
+  }, [activeTab, userRole]);
+
+  // Transform backend user to frontend format
+  const transformUser = (backendUser: any) => {
+    return {
+      id: backendUser.id,
+      name: `${backendUser.firstName || ''} ${backendUser.lastName || ''}`.trim(),
+      firstName: backendUser.firstName || '',
+      lastName: backendUser.lastName || '',
+      email: backendUser.email || '',
+      role: backendUser.role || '',
+      department: backendUser.department || '',
+      status: backendUser.isActive ? 'Active' : 'Inactive',
+      phone: backendUser.phone || '',
+      employeeId: backendUser.employeeId || '',
+    };
+  };
+
   // Handle Add User
-  const handleAddUser = () => {
-    if (!newUserName || !newUserEmail) {
+  const handleAddUser = async () => {
+    if (!newUserFirstName || !newUserLastName || !newUserEmail || !newUserPassword) {
+      alert('Please fill in all required fields (First Name, Last Name, Email, Password)');
       return;
     }
 
-    const newUser = {
-      id: users.length + 1,
-      name: newUserName,
-      email: newUserEmail,
-      role: newUserRole,
-      department: newUserDepartment,
-      status: newUserStatus,
-    };
+    setIsLoadingUsers(true);
+    setUsersError(null);
+    try {
+      const userData = {
+        firstName: newUserFirstName,
+        lastName: newUserLastName,
+        email: newUserEmail,
+        password: newUserPassword,
+        role: newUserRole,
+        employeeId: newUserEmployeeId || undefined,
+        phone: newUserPhone || undefined,
+        department: newUserDepartment || undefined,
+      };
 
-    setUsers([...users, newUser]);
-    setAddUserDialogOpen(false);
-    setNewUserName("");
-    setNewUserEmail("");
-    setNewUserRole("NPD");
-    setNewUserDepartment("");
-    setNewUserStatus("Active");
+      await apiService.createUser(userData);
+      
+      // Refresh users list
+      const fetchedUsers = await apiService.getUsers(true);
+      setUsers(fetchedUsers);
+      
+      setAddUserDialogOpen(false);
+      setNewUserFirstName("");
+      setNewUserLastName("");
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setNewUserRole("NPD");
+      setNewUserEmployeeId("");
+      setNewUserPhone("");
+      setNewUserDepartment("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create user';
+      setUsersError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating user:', err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  // Handle Edit User
+  const handleEditUser = (user: any) => {
+    setSelectedUser(user);
+    setEditUserFirstName(user.firstName || '');
+    setEditUserLastName(user.lastName || '');
+    setEditUserPhone(user.phone || '');
+    setEditUserDepartment(user.department || '');
+    setEditUserRole(user.role as UserRole);
+    setEditUserStatus(user.status || 'Active');
+    setEditUserDialogOpen(true);
+  };
+
+  const handleSaveEditUser = async () => {
+    if (!selectedUser || !editUserFirstName || !editUserLastName) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    setIsLoadingUsers(true);
+    setUsersError(null);
+    try {
+      const userData: any = {
+        firstName: editUserFirstName,
+        lastName: editUserLastName,
+        phone: editUserPhone || undefined,
+        department: editUserDepartment || undefined,
+      };
+
+      // Only update role and status if user is Approver
+      if (userRole === "Approver") {
+        userData.role = editUserRole;
+        userData.isActive = editUserStatus === 'Active';
+      }
+
+      await apiService.updateUser(selectedUser.id, userData);
+      
+      // Refresh users list
+      const fetchedUsers = await apiService.getUsers(true);
+      setUsers(fetchedUsers);
+      
+      setEditUserDialogOpen(false);
+      setSelectedUser(null);
+      setEditUserFirstName("");
+      setEditUserLastName("");
+      setEditUserPhone("");
+      setEditUserDepartment("");
+      setEditUserRole("NPD");
+      setEditUserStatus("Active");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update user';
+      setUsersError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating user:', err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  // Handle Delete/Deactivate User
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm("Are you sure you want to deactivate this user? They will not be able to log in.")) {
+      return;
+    }
+
+    setIsLoadingUsers(true);
+    setUsersError(null);
+    try {
+      await apiService.deactivateUser(userId);
+      
+      // Refresh users list
+      const fetchedUsers = await apiService.getUsers(true);
+      setUsers(fetchedUsers);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to deactivate user';
+      setUsersError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deactivating user:', err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
   };
 
   // Handle Add Role
-  const handleAddRole = () => {
-    if (!newRoleName || !newRoleDescription) {
+  const handleAddRole = async () => {
+    if (!newRoleName) {
+      alert('Please enter a role name');
       return;
     }
 
-    // Role addition logic here
-    setAddRoleDialogOpen(false);
-    setNewRoleName("");
-    setNewRoleDescription("");
-    setNewRolePermissions("");
+    setIsLoadingRoles(true);
+    setRolesError(null);
+    try {
+      const permissions = newRolePermissions 
+        ? newRolePermissions.split(',').map(p => p.trim()).filter(p => p)
+        : [];
+
+      const roleData = {
+        name: newRoleName,
+        description: newRoleDescription || undefined,
+        permissions: permissions.length > 0 ? permissions : undefined,
+      };
+
+      await apiService.createRole(roleData);
+      
+      // Refresh roles list
+      const fetchedRoles = await apiService.getRoles(true);
+      setRoles(fetchedRoles);
+      
+      setAddRoleDialogOpen(false);
+      setNewRoleName("");
+      setNewRoleDescription("");
+      setNewRolePermissions("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create role';
+      setRolesError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating role:', err);
+    } finally {
+      setIsLoadingRoles(false);
+    }
+  };
+
+  // Handle Edit Role
+  const handleEditRole = (role: any) => {
+    setSelectedRole(role);
+    setEditRoleName(role.name || '');
+    setEditRoleDescription(role.description || '');
+    setEditRolePermissions(role.permissions ? role.permissions.join(', ') : '');
+    setEditRoleStatus(role.isActive ? 'Active' : 'Inactive');
+    setEditRoleDialogOpen(true);
+  };
+
+  const handleSaveEditRole = async () => {
+    if (!selectedRole || !editRoleName) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    setIsLoadingRoles(true);
+    setRolesError(null);
+    try {
+      const permissions = editRolePermissions 
+        ? editRolePermissions.split(',').map(p => p.trim()).filter(p => p)
+        : [];
+
+      const roleData: any = {
+        name: editRoleName,
+        description: editRoleDescription || undefined,
+        permissions: permissions.length > 0 ? permissions : [],
+        isActive: editRoleStatus === 'Active',
+      };
+
+      await apiService.updateRole(selectedRole.id, roleData);
+      
+      // Refresh roles list
+      const fetchedRoles = await apiService.getRoles(true);
+      setRoles(fetchedRoles);
+      
+      setEditRoleDialogOpen(false);
+      setSelectedRole(null);
+      setEditRoleName("");
+      setEditRoleDescription("");
+      setEditRolePermissions("");
+      setEditRoleStatus("Active");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update role';
+      setRolesError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating role:', err);
+    } finally {
+      setIsLoadingRoles(false);
+    }
+  };
+
+  // Handle Delete Role
+  const handleDeleteRole = async (roleId: string, roleName: string) => {
+    if (!window.confirm(`Are you sure you want to delete the role "${roleName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    setIsLoadingRoles(true);
+    setRolesError(null);
+    try {
+      await apiService.deleteRole(roleId);
+      
+      // Refresh roles list
+      const fetchedRoles = await apiService.getRoles(true);
+      setRoles(fetchedRoles);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete role';
+      setRolesError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deleting role:', err);
+    } finally {
+      setIsLoadingRoles(false);
+    }
+  };
+
+  // Get role badge color
+  const getRoleBadgeColor = (roleName: string) => {
+    const colorMap: { [key: string]: string } = {
+      'Approver': 'bg-gradient-to-r from-purple-600 to-pink-600',
+      'NPD': 'bg-gradient-to-r from-blue-600 to-cyan-600',
+      'Maintenance': 'bg-gradient-to-r from-orange-600 to-red-600',
+      'Spares': 'bg-gradient-to-r from-green-600 to-teal-600',
+      'Indentor': 'bg-gradient-to-r from-yellow-600 to-orange-600',
+    };
+    return colorMap[roleName] || 'bg-gradient-to-r from-gray-600 to-gray-700';
   };
 
   // Handle Add Department
@@ -509,24 +818,34 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
         {/* User Management Section */}
         {activeTab === "user-management" && (
           <div className="space-y-4">
-            <Card>
-              <CardHeader className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <Users className="w-4 h-4" />
-                      User Management
-                    </CardTitle>
-                    <CardDescription className="text-xs">
-                      Manage user accounts and assign roles
-                    </CardDescription>
+            {userRole !== "Approver" ? (
+              <Card>
+                <CardContent className="p-8 text-center">
+                  <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <p className="text-sm text-gray-600">
+                    Only Approvers can manage users.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-base">
+                        <Users className="w-4 h-4" />
+                        User Management
+                      </CardTitle>
+                      <CardDescription className="text-xs">
+                        Manage user accounts and assign roles
+                      </CardDescription>
+                    </div>
+                    <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs" onClick={() => setAddUserDialogOpen(true)}>
+                      <Plus className="w-3.5 h-3.5 mr-1.5" />
+                      Add User
+                    </Button>
                   </div>
-                  <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs" onClick={() => setAddUserDialogOpen(true)}>
-                    <Plus className="w-3.5 h-3.5 mr-1.5" />
-                    Add User
-                  </Button>
-                </div>
-              </CardHeader>
+                </CardHeader>
               <CardContent className="p-4 pt-0">
                 <Table>
                   <TableHeader>
@@ -540,39 +859,75 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {users.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="text-xs font-medium">{user.name}</TableCell>
-                        <TableCell className="text-xs">{user.email}</TableCell>
-                        <TableCell className="text-xs">
-                          <Badge variant={user.role === "Approver" ? "default" : "secondary"} className="text-xs">
-                            {user.role}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">{user.department}</TableCell>
-                        <TableCell className="text-xs">
-                          <Badge variant={user.status === "Active" ? "default" : "secondary"} className="text-xs">
-                            {user.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
+                    {isLoadingUsers ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-xs py-8">
+                          Loading users...
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : usersError ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-xs py-8 text-red-600">
+                          Error: {usersError}
+                        </TableCell>
+                      </TableRow>
+                    ) : users.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-xs py-8 text-gray-500">
+                          No users found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      users.map((user) => {
+                        const transformedUser = transformUser(user);
+                        return (
+                          <TableRow key={user.id}>
+                            <TableCell className="text-xs font-medium">{transformedUser.name}</TableCell>
+                            <TableCell className="text-xs">{transformedUser.email}</TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant={transformedUser.role === "Approver" ? "default" : "secondary"} className="text-xs">
+                                {transformedUser.role}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs">{transformedUser.department}</TableCell>
+                            <TableCell className="text-xs">
+                              <Badge variant={transformedUser.status === "Active" ? "default" : "secondary"} className="text-xs">
+                                {transformedUser.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0"
+                                  onClick={() => handleEditUser(user)}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  onClick={() => handleDeleteUser(user.id)}
+                                  disabled={isLoadingUsers}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
-
+            )}
+            
             {/* Role Management */}
+            {userRole === "Approver" && (
             <Card>
               <CardHeader className="p-4">
                 <div className="flex items-center justify-between">
@@ -603,80 +958,71 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    <TableRow>
-                      <TableCell className="text-xs font-medium">
-                        <Badge className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs">Approver</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">Project approval and creation</TableCell>
-                      <TableCell className="text-xs">5</TableCell>
-                      <TableCell className="text-xs">Full Access</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="text-xs font-medium">
-                        <Badge className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-xs">NPD</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">New Product Development team</TableCell>
-                      <TableCell className="text-xs">12</TableCell>
-                      <TableCell className="text-xs">PR Management, Quotations</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="text-xs font-medium">
-                        <Badge className="bg-gradient-to-r from-orange-600 to-red-600 text-white text-xs">Maintenance</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">Tool maintenance operations</TableCell>
-                      <TableCell className="text-xs">8</TableCell>
-                      <TableCell className="text-xs">Tool Management</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="text-xs font-medium">
-                        <Badge className="bg-gradient-to-r from-green-600 to-teal-600 text-white text-xs">Spares</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">Spares inventory management</TableCell>
-                      <TableCell className="text-xs">6</TableCell>
-                      <TableCell className="text-xs">Inventory Management</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell className="text-xs font-medium">
-                        <Badge className="bg-gradient-to-r from-yellow-600 to-orange-600 text-white text-xs">Indentor</Badge>
-                      </TableCell>
-                      <TableCell className="text-xs">Production spares requests</TableCell>
-                      <TableCell className="text-xs">25</TableCell>
-                      <TableCell className="text-xs">Request Spares</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs">
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    {isLoadingRoles ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-xs py-8">
+                          <Loader2 className="w-4 h-4 animate-spin inline-block mr-2" />
+                          Loading roles...
+                        </TableCell>
+                      </TableRow>
+                    ) : rolesError ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-xs py-8 text-red-600">
+                          Error: {rolesError}
+                        </TableCell>
+                      </TableRow>
+                    ) : roles.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-xs py-8 text-gray-500">
+                          No roles found. Click "Add Role" to create one.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      roles.map((role) => (
+                        <TableRow key={role.id}>
+                          <TableCell className="text-xs font-medium">
+                            <Badge className={`${getRoleBadgeColor(role.name)} text-white text-xs`}>
+                              {role.name}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs">{role.description || '-'}</TableCell>
+                          <TableCell className="text-xs">{role.userCount || 0}</TableCell>
+                          <TableCell className="text-xs">
+                            {role.permissions && role.permissions.length > 0 
+                              ? role.permissions.join(', ') 
+                              : 'No permissions'}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-7 text-xs"
+                                onClick={() => handleEditRole(role)}
+                                disabled={isLoadingRoles}
+                              >
+                                <Pencil className="w-3.5 h-3.5 mr-1" />
+                                Edit
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                                onClick={() => handleDeleteRole(role.id, role.name)}
+                                disabled={isLoadingRoles}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </CardContent>
             </Card>
+            )}
           </div>
         )}
 
@@ -1384,36 +1730,60 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
 
         {/* Add User Dialog */}
         <Dialog open={addUserDialogOpen} onOpenChange={setAddUserDialogOpen}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-base">Add User</DialogTitle>
               <DialogDescription className="text-xs">
-                Add a new user to the system
+                Add a new user to the system. Fields marked with * are required.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 mt-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="newUserName" className="text-xs">Name</Label>
-                <Input 
-                  id="newUserName" 
-                  placeholder="e.g. John Doe" 
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  className="h-8 text-xs" 
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="newUserFirstName" className="text-xs">First Name *</Label>
+                  <Input 
+                    id="newUserFirstName" 
+                    placeholder="John" 
+                    value={newUserFirstName}
+                    onChange={(e) => setNewUserFirstName(e.target.value)}
+                    className="h-8 text-xs" 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="newUserLastName" className="text-xs">Last Name *</Label>
+                  <Input 
+                    id="newUserLastName" 
+                    placeholder="Doe" 
+                    value={newUserLastName}
+                    onChange={(e) => setNewUserLastName(e.target.value)}
+                    className="h-8 text-xs" 
+                  />
+                </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="newUserEmail" className="text-xs">Email</Label>
+                <Label htmlFor="newUserEmail" className="text-xs">Email *</Label>
                 <Input 
                   id="newUserEmail" 
-                  placeholder="e.g. john.doe@company.com" 
+                  type="email"
+                  placeholder="john.doe@company.com" 
                   value={newUserEmail}
                   onChange={(e) => setNewUserEmail(e.target.value)}
                   className="h-8 text-xs" 
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="newUserRole" className="text-xs">Role</Label>
+                <Label htmlFor="newUserPassword" className="text-xs">Password *</Label>
+                <Input 
+                  id="newUserPassword" 
+                  type="password"
+                  placeholder="Minimum 8 characters" 
+                  value={newUserPassword}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  className="h-8 text-xs" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newUserRole" className="text-xs">Role *</Label>
                 <Select
                   value={newUserRole}
                   onValueChange={(value) => setNewUserRole(value as UserRole)}
@@ -1431,6 +1801,27 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                 </Select>
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="newUserEmployeeId" className="text-xs">Employee ID</Label>
+                <Input 
+                  id="newUserEmployeeId" 
+                  placeholder="e.g. EMP001" 
+                  value={newUserEmployeeId}
+                  onChange={(e) => setNewUserEmployeeId(e.target.value)}
+                  className="h-8 text-xs" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newUserPhone" className="text-xs">Phone</Label>
+                <Input 
+                  id="newUserPhone" 
+                  type="tel"
+                  placeholder="+91 98765 43210" 
+                  value={newUserPhone}
+                  onChange={(e) => setNewUserPhone(e.target.value)}
+                  className="h-8 text-xs" 
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="newUserDepartment" className="text-xs">Department</Label>
                 <Input 
                   id="newUserDepartment" 
@@ -1440,11 +1831,262 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                   className="h-8 text-xs" 
                 />
               </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" className="h-8 text-xs" onClick={() => setAddUserDialogOpen(false)} disabled={isLoadingUsers}>
+                Cancel
+              </Button>
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
+                onClick={handleAddUser}
+                disabled={isLoadingUsers}
+              >
+                {isLoadingUsers ? (
+                  <>Loading...</>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Add User
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit User Dialog */}
+        <Dialog open={editUserDialogOpen} onOpenChange={setEditUserDialogOpen}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-base">Edit User</DialogTitle>
+              <DialogDescription className="text-xs">
+                Update user information. Fields marked with * are required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 mt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editUserFirstName" className="text-xs">First Name *</Label>
+                  <Input 
+                    id="editUserFirstName" 
+                    placeholder="John" 
+                    value={editUserFirstName}
+                    onChange={(e) => setEditUserFirstName(e.target.value)}
+                    className="h-8 text-xs" 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editUserLastName" className="text-xs">Last Name *</Label>
+                  <Input 
+                    id="editUserLastName" 
+                    placeholder="Doe" 
+                    value={editUserLastName}
+                    onChange={(e) => setEditUserLastName(e.target.value)}
+                    className="h-8 text-xs" 
+                  />
+                </div>
+              </div>
+              {userRole === "Approver" && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editUserRole" className="text-xs">Role *</Label>
+                    <Select
+                      value={editUserRole}
+                      onValueChange={(value) => setEditUserRole(value as UserRole)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select a role" />
+                      </SelectTrigger>
+                      <SelectContent className="text-xs">
+                        <SelectItem value="Approver">Approver</SelectItem>
+                        <SelectItem value="NPD">NPD</SelectItem>
+                        <SelectItem value="Maintenance">Maintenance</SelectItem>
+                        <SelectItem value="Spares">Spares</SelectItem>
+                        <SelectItem value="Indentor">Indentor</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editUserStatus" className="text-xs">Status</Label>
+                    <Select
+                      value={editUserStatus}
+                      onValueChange={(value) => setEditUserStatus(value)}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select a status" />
+                      </SelectTrigger>
+                      <SelectContent className="text-xs">
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
               <div className="space-y-1.5">
-                <Label htmlFor="newUserStatus" className="text-xs">Status</Label>
+                <Label htmlFor="editUserPhone" className="text-xs">Phone</Label>
+                <Input 
+                  id="editUserPhone" 
+                  type="tel"
+                  placeholder="+91 98765 43210" 
+                  value={editUserPhone}
+                  onChange={(e) => setEditUserPhone(e.target.value)}
+                  className="h-8 text-xs" 
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="editUserDepartment" className="text-xs">Department</Label>
+                <Input 
+                  id="editUserDepartment" 
+                  placeholder="e.g. NPD Team" 
+                  value={editUserDepartment}
+                  onChange={(e) => setEditUserDepartment(e.target.value)}
+                  className="h-8 text-xs" 
+                />
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" className="h-8 text-xs" onClick={() => setEditUserDialogOpen(false)} disabled={isLoadingUsers}>
+                Cancel
+              </Button>
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
+                onClick={handleSaveEditUser}
+                disabled={isLoadingUsers}
+              >
+                {isLoadingUsers ? (
+                  <>Saving...</>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 mr-1.5" />
+                    Save Changes
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Role Dialog */}
+        <Dialog open={addRoleDialogOpen} onOpenChange={setAddRoleDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Add Role</DialogTitle>
+              <DialogDescription className="text-xs">
+                Add a new role to the system. Fields marked with * are required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 mt-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="newRoleName" className="text-xs">Role Name *</Label>
+                <Input 
+                  id="newRoleName" 
+                  placeholder="e.g. Approver" 
+                  value={newRoleName}
+                  onChange={(e) => setNewRoleName(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newRoleDescription" className="text-xs">Description</Label>
+                <Input 
+                  id="newRoleDescription" 
+                  placeholder="e.g. Project approval and creation" 
+                  value={newRoleDescription}
+                  onChange={(e) => setNewRoleDescription(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="newRolePermissions" className="text-xs">Permissions</Label>
+                <Input 
+                  id="newRolePermissions" 
+                  placeholder="e.g. Full Access, PR Management, Quotations (comma-separated)" 
+                  value={newRolePermissions}
+                  onChange={(e) => setNewRolePermissions(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+                <p className="text-xs text-gray-500">Enter permissions separated by commas</p>
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="outline" className="h-8 text-xs" onClick={() => setAddRoleDialogOpen(false)} disabled={isLoadingRoles}>
+                Cancel
+              </Button>
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
+                onClick={handleAddRole}
+                disabled={isLoadingRoles}
+              >
+                {isLoadingRoles ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Adding...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 mr-1.5" />
+                    Add Role
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Role Dialog */}
+        <Dialog open={editRoleDialogOpen} onOpenChange={setEditRoleDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Edit Role</DialogTitle>
+              <DialogDescription className="text-xs">
+                Update role information. Fields marked with * are required.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 mt-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="editRoleName" className="text-xs">Role Name *</Label>
+                <Input 
+                  id="editRoleName" 
+                  placeholder="e.g. Approver" 
+                  value={editRoleName}
+                  onChange={(e) => setEditRoleName(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="editRoleDescription" className="text-xs">Description</Label>
+                <Input 
+                  id="editRoleDescription" 
+                  placeholder="e.g. Project approval and creation" 
+                  value={editRoleDescription}
+                  onChange={(e) => setEditRoleDescription(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="editRolePermissions" className="text-xs">Permissions</Label>
+                <Input 
+                  id="editRolePermissions" 
+                  placeholder="e.g. Full Access, PR Management (comma-separated)" 
+                  value={editRolePermissions}
+                  onChange={(e) => setEditRolePermissions(e.target.value)}
+                  className="h-8 text-xs" 
+                  disabled={isLoadingRoles}
+                />
+                <p className="text-xs text-gray-500">Enter permissions separated by commas</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="editRoleStatus" className="text-xs">Status</Label>
                 <Select
-                  value={newUserStatus}
-                  onValueChange={(value) => setNewUserStatus(value)}
+                  value={editRoleStatus}
+                  onValueChange={(value) => setEditRoleStatus(value)}
+                  disabled={isLoadingRoles}
                 >
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Select a status" />
@@ -1457,71 +2099,25 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
               </div>
             </div>
             <DialogFooter className="mt-4">
-              <Button variant="outline" className="h-8 text-xs" onClick={() => setAddUserDialogOpen(false)}>
+              <Button variant="outline" className="h-8 text-xs" onClick={() => setEditRoleDialogOpen(false)} disabled={isLoadingRoles}>
                 Cancel
               </Button>
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
-                onClick={handleAddUser}
+                onClick={handleSaveEditRole}
+                disabled={isLoadingRoles}
               >
-                <Plus className="w-3.5 h-3.5 mr-1.5" />
-                Add User
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Add Role Dialog */}
-        <Dialog open={addRoleDialogOpen} onOpenChange={setAddRoleDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-base">Add Role</DialogTitle>
-              <DialogDescription className="text-xs">
-                Add a new role to the system
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 mt-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="newRoleName" className="text-xs">Role Name</Label>
-                <Input 
-                  id="newRoleName" 
-                  placeholder="e.g. Approver" 
-                  value={newRoleName}
-                  onChange={(e) => setNewRoleName(e.target.value)}
-                  className="h-8 text-xs" 
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="newRoleDescription" className="text-xs">Description</Label>
-                <Input 
-                  id="newRoleDescription" 
-                  placeholder="e.g. Project approval and creation" 
-                  value={newRoleDescription}
-                  onChange={(e) => setNewRoleDescription(e.target.value)}
-                  className="h-8 text-xs" 
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="newRolePermissions" className="text-xs">Permissions</Label>
-                <Input 
-                  id="newRolePermissions" 
-                  placeholder="e.g. Full Access" 
-                  value={newRolePermissions}
-                  onChange={(e) => setNewRolePermissions(e.target.value)}
-                  className="h-8 text-xs" 
-                />
-              </div>
-            </div>
-            <DialogFooter className="mt-4">
-              <Button variant="outline" className="h-8 text-xs" onClick={() => setAddRoleDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button 
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
-                onClick={handleAddRole}
-              >
-                <Plus className="w-3.5 h-3.5 mr-1.5" />
-                Add Role
+                {isLoadingRoles ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 mr-1.5" />
+                    Save Changes
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
