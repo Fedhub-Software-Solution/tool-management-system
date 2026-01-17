@@ -38,7 +38,7 @@ interface SettingsProps {
 }
 
 interface PartNumberConfig {
-  id: number;
+  id: string;
   prefix: string;
   format: string;
   example: string;
@@ -47,7 +47,7 @@ interface PartNumberConfig {
 }
 
 interface ToolNumberConfig {
-  id: number;
+  id: string;
   prefix: string;
   format: string;
   example: string;
@@ -106,13 +106,13 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [newToolAutoIncrement, setNewToolAutoIncrement] = useState(true);
 
   // Form states for Edit Part Number
-  const [editPartNumberId, setEditPartNumberId] = useState<number | null>(null);
+  const [editPartNumberId, setEditPartNumberId] = useState<string | null>(null);
   const [editPartPrefix, setEditPartPrefix] = useState("");
   const [editPartFormat, setEditPartFormat] = useState("");
   const [editPartAutoIncrement, setEditPartAutoIncrement] = useState(true);
 
   // Form states for Edit Tool Number
-  const [editToolNumberId, setEditToolNumberId] = useState<number | null>(null);
+  const [editToolNumberId, setEditToolNumberId] = useState<string | null>(null);
   const [editToolPrefix, setEditToolPrefix] = useState("");
   const [editToolFormat, setEditToolFormat] = useState("");
   const [editToolAutoIncrement, setEditToolAutoIncrement] = useState(true);
@@ -167,7 +167,7 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [newBomToolNumber, setNewBomToolNumber] = useState("");
 
   // Form states for Edit BOM Item
-  const [editBomId, setEditBomId] = useState<number | null>(null);
+  const [editBomId, setEditBomId] = useState<string | null>(null);
   const [editBomItemName, setEditBomItemName] = useState("");
   const [editBomCategory, setEditBomCategory] = useState("");
   const [editBomUnit, setEditBomUnit] = useState("");
@@ -184,24 +184,35 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   const [isLoadingDepartments, setIsLoadingDepartments] = useState(false);
   const [departmentsError, setDepartmentsError] = useState<string | null>(null);
 
-  // Mock data for Part Number Configuration
-  const [partNumberConfig, setPartNumberConfig] = useState([
-    { id: 1, prefix: "PN", format: "PN-YYYY-XXXX", example: "PN-2026-0001", autoIncrement: true, createdAt: "2023-10-01" },
-  ]);
+  // Part Number Configuration state
+  const [partNumberConfig, setPartNumberConfig] = useState<PartNumberConfig[]>([]);
+  const [isLoadingPartNumberConfig, setIsLoadingPartNumberConfig] = useState(false);
+  const [partNumberConfigError, setPartNumberConfigError] = useState<string | null>(null);
 
-  // Mock data for Tool Number Configuration
-  const [toolNumberConfig, setToolNumberConfig] = useState([
-    { id: 1, prefix: "TN", format: "TN-YYYY-XXXX", example: "TN-2026-0001", autoIncrement: true, createdAt: "2023-10-01" },
-  ]);
+  // Tool Number Configuration state
+  const [toolNumberConfig, setToolNumberConfig] = useState<ToolNumberConfig[]>([]);
+  const [isLoadingToolNumberConfig, setIsLoadingToolNumberConfig] = useState(false);
+  const [toolNumberConfigError, setToolNumberConfigError] = useState<string | null>(null);
 
-  // Mock data for BOM items with prices
-  const [bomItems, setBomItems] = useState([
-    { id: 1, itemName: "Steel Plate", category: "Raw Material", unit: "kg", unitPrice: "₹1,250", supplier: "Steel Corp", partNumber: "PN-2026-0001", toolNumber: "TN-2026-0001" },
-    { id: 2, itemName: "Bearing", category: "Component", unit: "pcs", unitPrice: "₹850", supplier: "Bearing Ltd", partNumber: "PN-2026-0002", toolNumber: "TN-2026-0002" },
-    { id: 3, itemName: "Motor 5HP", category: "Component", unit: "pcs", unitPrice: "₹12,500", supplier: "Motor India", partNumber: "PN-2026-0003", toolNumber: "TN-2026-0003" },
-    { id: 4, itemName: "Hydraulic Cylinder", category: "Component", unit: "pcs", unitPrice: "₹25,000", supplier: "Hydraulics Co", partNumber: "PN-2026-0004", toolNumber: "TN-2026-0004" },
-    { id: 5, itemName: "Control Panel", category: "Electronics", unit: "pcs", unitPrice: "₹35,000", supplier: "Electronics Inc", partNumber: "PN-2026-0005", toolNumber: "TN-2026-0005" },
-  ]);
+  // BOM items state
+  const [bomItems, setBomItems] = useState<any[]>([]);
+  const [isLoadingBomItems, setIsLoadingBomItems] = useState(false);
+  const [bomItemsError, setBomItemsError] = useState<string | null>(null);
+
+  // User Preferences state
+  const [preferences, setPreferences] = useState<any>({
+    emailNotifications: true,
+    newPrCreation: true,
+    quotationUpdates: true,
+    approvalRequests: true,
+    lowStockAlerts: true,
+    compactView: true,
+    showCurrencyAsINR: true,
+    autoRefreshDashboard: true,
+  });
+  const [isLoadingPreferences, setIsLoadingPreferences] = useState(false);
+  const [isSavingPreferences, setIsSavingPreferences] = useState(false);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
 
   // Helper function to generate example from format
   const generateExample = (format: string, prefix: string) => {
@@ -210,57 +221,123 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   };
 
   // Handle Add Part Number
-  const handleAddPartNumber = () => {
+  const handleAddPartNumber = async () => {
     if (!newPartPrefix || !newPartFormat) {
+      alert('Please fill in all required fields (Prefix and Format)');
       return;
     }
 
-    const newPartNumber: PartNumberConfig = {
-      id: partNumberConfig.length + 1,
-      prefix: newPartPrefix,
-      format: newPartFormat,
-      example: generateExample(newPartFormat, newPartPrefix),
-      autoIncrement: newPartAutoIncrement,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
+    setIsLoadingPartNumberConfig(true);
+    setPartNumberConfigError(null);
+    try {
+      const configData = {
+        prefix: newPartPrefix,
+        format: newPartFormat,
+        autoIncrement: newPartAutoIncrement,
+      };
 
-    setPartNumberConfig([...partNumberConfig, newPartNumber]);
-    setPartNumberDialogOpen(false);
-    setNewPartPrefix("");
-    setNewPartFormat("");
-    setNewPartAutoIncrement(true);
+      await apiService.createPartNumberConfig(configData);
+      
+      // Refresh part number configs list
+      const fetchedConfigs = await apiService.getPartNumberConfigs();
+      setPartNumberConfig(fetchedConfigs);
+      
+      setPartNumberDialogOpen(false);
+      setNewPartPrefix("");
+      setNewPartFormat("");
+      setNewPartAutoIncrement(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create part number configuration';
+      setPartNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating part number configuration:', err);
+    } finally {
+      setIsLoadingPartNumberConfig(false);
+    }
   };
 
   // Handle Add Tool Number
-  const handleAddToolNumber = () => {
+  const handleAddToolNumber = async () => {
     if (!newToolPrefix || !newToolFormat) {
+      alert('Please fill in all required fields (Prefix and Format)');
       return;
     }
 
-    const newToolNumber: ToolNumberConfig = {
-      id: toolNumberConfig.length + 1,
-      prefix: newToolPrefix,
-      format: newToolFormat,
-      example: generateExample(newToolFormat, newToolPrefix),
-      autoIncrement: newToolAutoIncrement,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
+    setIsLoadingToolNumberConfig(true);
+    setToolNumberConfigError(null);
+    try {
+      const configData = {
+        prefix: newToolPrefix,
+        format: newToolFormat,
+        autoIncrement: newToolAutoIncrement,
+      };
 
-    setToolNumberConfig([...toolNumberConfig, newToolNumber]);
-    setToolNumberDialogOpen(false);
-    setNewToolPrefix("");
-    setNewToolFormat("");
-    setNewToolAutoIncrement(true);
+      await apiService.createToolNumberConfig(configData);
+      
+      // Refresh tool number configs list
+      const fetchedConfigs = await apiService.getToolNumberConfigs();
+      setToolNumberConfig(fetchedConfigs);
+      
+      setToolNumberDialogOpen(false);
+      setNewToolPrefix("");
+      setNewToolFormat("");
+      setNewToolAutoIncrement(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create tool number configuration';
+      setToolNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating tool number configuration:', err);
+    } finally {
+      setIsLoadingToolNumberConfig(false);
+    }
   };
 
   // Handle Delete Part Number
-  const handleDeletePartNumber = (id: number) => {
-    setPartNumberConfig(partNumberConfig.filter(item => item.id !== id));
+  const handleDeletePartNumber = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this part number configuration?')) {
+      return;
+    }
+
+    setIsLoadingPartNumberConfig(true);
+    setPartNumberConfigError(null);
+    try {
+      await apiService.deletePartNumberConfig(id);
+      
+      // Refresh part number configs list
+      const fetchedConfigs = await apiService.getPartNumberConfigs();
+      setPartNumberConfig(fetchedConfigs);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete part number configuration';
+      setPartNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deleting part number configuration:', err);
+    } finally {
+      setIsLoadingPartNumberConfig(false);
+    }
   };
 
   // Handle Delete Tool Number
-  const handleDeleteToolNumber = (id: number) => {
-    setToolNumberConfig(toolNumberConfig.filter(item => item.id !== id));
+  const handleDeleteToolNumber = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this tool number configuration?')) {
+      return;
+    }
+
+    setIsLoadingToolNumberConfig(true);
+    setToolNumberConfigError(null);
+    try {
+      await apiService.deleteToolNumberConfig(id);
+      
+      // Refresh tool number configs list
+      const fetchedConfigs = await apiService.getToolNumberConfigs();
+      setToolNumberConfig(fetchedConfigs);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete tool number configuration';
+      setToolNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deleting tool number configuration:', err);
+    } finally {
+      setIsLoadingToolNumberConfig(false);
+    }
   };
 
   // Handle Edit Part Number
@@ -272,28 +349,40 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
     setEditPartNumberDialogOpen(true);
   };
 
-  const handleSavePartNumber = () => {
+  const handleSavePartNumber = async () => {
     if (!editPartPrefix || !editPartFormat || editPartNumberId === null) {
+      alert('Please fill in all required fields');
       return;
     }
 
-    setPartNumberConfig(partNumberConfig.map(item => 
-      item.id === editPartNumberId 
-        ? {
-            ...item,
-            prefix: editPartPrefix,
-            format: editPartFormat,
-            example: generateExample(editPartFormat, editPartPrefix),
-            autoIncrement: editPartAutoIncrement
-          }
-        : item
-    ));
+    setIsLoadingPartNumberConfig(true);
+    setPartNumberConfigError(null);
+    try {
+      const configData = {
+        prefix: editPartPrefix,
+        format: editPartFormat,
+        autoIncrement: editPartAutoIncrement,
+      };
 
-    setEditPartNumberDialogOpen(false);
-    setEditPartNumberId(null);
-    setEditPartPrefix("");
-    setEditPartFormat("");
-    setEditPartAutoIncrement(true);
+      await apiService.updatePartNumberConfig(editPartNumberId, configData);
+      
+      // Refresh part number configs list
+      const fetchedConfigs = await apiService.getPartNumberConfigs();
+      setPartNumberConfig(fetchedConfigs);
+      
+      setEditPartNumberDialogOpen(false);
+      setEditPartNumberId(null);
+      setEditPartPrefix("");
+      setEditPartFormat("");
+      setEditPartAutoIncrement(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update part number configuration';
+      setPartNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating part number configuration:', err);
+    } finally {
+      setIsLoadingPartNumberConfig(false);
+    }
   };
 
   // Handle Edit Tool Number
@@ -305,28 +394,40 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
     setEditToolNumberDialogOpen(true);
   };
 
-  const handleSaveToolNumber = () => {
+  const handleSaveToolNumber = async () => {
     if (!editToolPrefix || !editToolFormat || editToolNumberId === null) {
+      alert('Please fill in all required fields');
       return;
     }
 
-    setToolNumberConfig(toolNumberConfig.map(item => 
-      item.id === editToolNumberId 
-        ? {
-            ...item,
-            prefix: editToolPrefix,
-            format: editToolFormat,
-            example: generateExample(editToolFormat, editToolPrefix),
-            autoIncrement: editToolAutoIncrement
-          }
-        : item
-    ));
+    setIsLoadingToolNumberConfig(true);
+    setToolNumberConfigError(null);
+    try {
+      const configData = {
+        prefix: editToolPrefix,
+        format: editToolFormat,
+        autoIncrement: editToolAutoIncrement,
+      };
 
-    setEditToolNumberDialogOpen(false);
-    setEditToolNumberId(null);
-    setEditToolPrefix("");
-    setEditToolFormat("");
-    setEditToolAutoIncrement(true);
+      await apiService.updateToolNumberConfig(editToolNumberId, configData);
+      
+      // Refresh tool number configs list
+      const fetchedConfigs = await apiService.getToolNumberConfigs();
+      setToolNumberConfig(fetchedConfigs);
+      
+      setEditToolNumberDialogOpen(false);
+      setEditToolNumberId(null);
+      setEditToolPrefix("");
+      setEditToolFormat("");
+      setEditToolAutoIncrement(true);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update tool number configuration';
+      setToolNumberConfigError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating tool number configuration:', err);
+    } finally {
+      setIsLoadingToolNumberConfig(false);
+    }
   };
 
   // Fetch users on mount
@@ -398,6 +499,134 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
       fetchDepartments();
     }
   }, [activeTab]);
+
+  // Fetch part number configs when configuration tab is active
+  useEffect(() => {
+    const fetchPartNumberConfigs = async () => {
+      if (activeTab !== "configuration" || configTab !== "part-number") return;
+      
+      setIsLoadingPartNumberConfig(true);
+      setPartNumberConfigError(null);
+      try {
+        const fetchedConfigs = await apiService.getPartNumberConfigs();
+        setPartNumberConfig(fetchedConfigs);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch part number configurations';
+        setPartNumberConfigError(errorMessage);
+        console.error('Error fetching part number configurations:', err);
+      } finally {
+        setIsLoadingPartNumberConfig(false);
+      }
+    };
+
+    fetchPartNumberConfigs();
+  }, [activeTab, configTab]);
+
+  // Fetch tool number configs when configuration tab is active
+  useEffect(() => {
+    const fetchToolNumberConfigs = async () => {
+      if (activeTab !== "configuration" || configTab !== "tool-number") return;
+      
+      setIsLoadingToolNumberConfig(true);
+      setToolNumberConfigError(null);
+      try {
+        const fetchedConfigs = await apiService.getToolNumberConfigs();
+        setToolNumberConfig(fetchedConfigs);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch tool number configurations';
+        setToolNumberConfigError(errorMessage);
+        console.error('Error fetching tool number configurations:', err);
+      } finally {
+        setIsLoadingToolNumberConfig(false);
+      }
+    };
+
+    fetchToolNumberConfigs();
+  }, [activeTab, configTab]);
+
+  // Fetch BOM items when configuration tab is active
+  useEffect(() => {
+    const fetchBomItems = async () => {
+      if (activeTab !== "configuration" || configTab !== "bom") return;
+      
+      setIsLoadingBomItems(true);
+      setBomItemsError(null);
+      try {
+        const fetchedItems = await apiService.getBomItems();
+        setBomItems(fetchedItems);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch BOM items';
+        setBomItemsError(errorMessage);
+        console.error('Error fetching BOM items:', err);
+      } finally {
+        setIsLoadingBomItems(false);
+      }
+    };
+
+    fetchBomItems();
+  }, [activeTab, configTab]);
+
+  // Fetch user preferences when preferences tab is active
+  useEffect(() => {
+    const fetchPreferences = async () => {
+      if (activeTab !== "preferences") return;
+      
+      setIsLoadingPreferences(true);
+      setPreferencesError(null);
+      try {
+        const fetchedPreferences = await apiService.getUserPreferences();
+        setPreferences(fetchedPreferences);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch preferences';
+        setPreferencesError(errorMessage);
+        console.error('Error fetching preferences:', err);
+      } finally {
+        setIsLoadingPreferences(false);
+      }
+    };
+
+    fetchPreferences();
+  }, [activeTab]);
+
+  // Handle Save Preferences
+  const handleSavePreferences = async () => {
+    setIsSavingPreferences(true);
+    setPreferencesError(null);
+    try {
+      const updatedPreferences = await apiService.updateUserPreferences(preferences);
+      setPreferences(updatedPreferences);
+      alert('Preferences saved successfully!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to save preferences';
+      setPreferencesError(errorMessage);
+      alert(errorMessage);
+      console.error('Error saving preferences:', err);
+    } finally {
+      setIsSavingPreferences(false);
+    }
+  };
+
+  // Handle Reset Preferences
+  const handleResetPreferences = async () => {
+    if (!window.confirm('Are you sure you want to reset all preferences to default values?')) {
+      return;
+    }
+
+    setIsSavingPreferences(true);
+    setPreferencesError(null);
+    try {
+      const resetPreferences = await apiService.resetUserPreferences();
+      setPreferences(resetPreferences);
+      alert('Preferences reset to defaults successfully!');
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to reset preferences';
+      setPreferencesError(errorMessage);
+      alert(errorMessage);
+      console.error('Error resetting preferences:', err);
+    } finally {
+      setIsSavingPreferences(false);
+    }
+  };
 
   // Transform backend user to frontend format
   const transformUser = (backendUser: any) => {
@@ -778,31 +1007,47 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   };
 
   // Handle Add BOM Item
-  const handleAddBomItem = () => {
-    if (!newBomItemName || !newBomCategory) {
+  const handleAddBomItem = async () => {
+    if (!newBomItemName || !newBomCategory || !newBomUnit || !newBomUnitPrice) {
+      alert('Please fill in all required fields (Item Name, Category, Unit, Unit Price)');
       return;
     }
 
-    const newBomItem = {
-      id: bomItems.length + 1,
-      itemName: newBomItemName,
-      category: newBomCategory,
-      unit: newBomUnit,
-      unitPrice: newBomUnitPrice,
-      supplier: newBomSupplier,
-      partNumber: newBomPartNumber,
-      toolNumber: newBomToolNumber,
-    };
+    setIsLoadingBomItems(true);
+    setBomItemsError(null);
+    try {
+      const itemData = {
+        itemName: newBomItemName,
+        category: newBomCategory,
+        unit: newBomUnit,
+        unitPrice: newBomUnitPrice,
+        supplier: newBomSupplier || undefined,
+        partNumber: newBomPartNumber || undefined,
+        toolNumber: newBomToolNumber || undefined,
+      };
 
-    setBomItems([...bomItems, newBomItem]);
-    setAddBomDialogOpen(false);
-    setNewBomItemName("");
-    setNewBomCategory("");
-    setNewBomUnit("");
-    setNewBomUnitPrice("");
-    setNewBomSupplier("");
-    setNewBomPartNumber("");
-    setNewBomToolNumber("");
+      await apiService.createBomItem(itemData);
+      
+      // Refresh BOM items list
+      const fetchedItems = await apiService.getBomItems();
+      setBomItems(fetchedItems);
+      
+      setAddBomDialogOpen(false);
+      setNewBomItemName("");
+      setNewBomCategory("");
+      setNewBomUnit("");
+      setNewBomUnitPrice("");
+      setNewBomSupplier("");
+      setNewBomPartNumber("");
+      setNewBomToolNumber("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create BOM item';
+      setBomItemsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error creating BOM item:', err);
+    } finally {
+      setIsLoadingBomItems(false);
+    }
   };
 
   // Handle Edit BOM Item
@@ -819,35 +1064,72 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
   };
 
   // Handle Save Edit BOM Item
-  const handleSaveEditBomItem = () => {
+  const handleSaveEditBomItem = async () => {
     if (!editBomItemName || !editBomCategory || editBomId === null) {
+      alert('Please fill in all required fields');
       return;
     }
 
-    setBomItems(bomItems.map(item => 
-      item.id === editBomId 
-        ? {
-            ...item,
-            itemName: editBomItemName,
-            category: editBomCategory,
-            unit: editBomUnit,
-            unitPrice: editBomUnitPrice,
-            supplier: editBomSupplier,
-            partNumber: editBomPartNumber,
-            toolNumber: editBomToolNumber,
-          }
-        : item
-    ));
+    setIsLoadingBomItems(true);
+    setBomItemsError(null);
+    try {
+      const itemData = {
+        itemName: editBomItemName,
+        category: editBomCategory,
+        unit: editBomUnit,
+        unitPrice: editBomUnitPrice,
+        supplier: editBomSupplier || undefined,
+        partNumber: editBomPartNumber || undefined,
+        toolNumber: editBomToolNumber || undefined,
+      };
 
-    setEditBomDialogOpen(false);
-    setEditBomId(null);
-    setEditBomItemName("");
-    setEditBomCategory("");
-    setEditBomUnit("");
-    setEditBomUnitPrice("");
-    setEditBomSupplier("");
-    setEditBomPartNumber("");
-    setEditBomToolNumber("");
+      await apiService.updateBomItem(editBomId, itemData);
+      
+      // Refresh BOM items list
+      const fetchedItems = await apiService.getBomItems();
+      setBomItems(fetchedItems);
+      
+      setEditBomDialogOpen(false);
+      setEditBomId(null);
+      setEditBomItemName("");
+      setEditBomCategory("");
+      setEditBomUnit("");
+      setEditBomUnitPrice("");
+      setEditBomSupplier("");
+      setEditBomPartNumber("");
+      setEditBomToolNumber("");
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to update BOM item';
+      setBomItemsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error updating BOM item:', err);
+    } finally {
+      setIsLoadingBomItems(false);
+    }
+  };
+
+  // Handle Delete BOM Item
+  const handleDeleteBomItem = async (id: string, itemName: string) => {
+    if (!window.confirm(`Are you sure you want to delete the BOM item "${itemName}"?`)) {
+      return;
+    }
+
+    setIsLoadingBomItems(true);
+    setBomItemsError(null);
+    try {
+      await apiService.deleteBomItem(id);
+      
+      // Refresh BOM items list
+      const fetchedItems = await apiService.getBomItems();
+      setBomItems(fetchedItems);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to delete BOM item';
+      setBomItemsError(errorMessage);
+      alert(errorMessage);
+      console.error('Error deleting BOM item:', err);
+    } finally {
+      setIsLoadingBomItems(false);
+    }
   };
 
   // Helper function to get section title
@@ -1447,10 +1729,22 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                         <TableCell className="text-xs">{item.supplier}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1.5">
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleEditBomItem(item)}>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 w-7 p-0" 
+                              onClick={() => handleEditBomItem(item)}
+                              disabled={isLoadingBomItems}
+                            >
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50">
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => handleDeleteBomItem(item.id, item.itemName)}
+                              disabled={isLoadingBomItems}
+                            >
                               <Trash2 className="w-3.5 h-3.5" />
                             </Button>
                           </div>
@@ -1487,7 +1781,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Receive email updates for important activities
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.emailNotifications ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, emailNotifications: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1498,7 +1796,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Get notified when a new PR is created
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.newPrCreation ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, newPrCreation: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1509,7 +1811,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Receive updates on quotation submissions and evaluations
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.quotationUpdates ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, quotationUpdates: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1520,7 +1826,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Get notified when approval is required
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.approvalRequests ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, approvalRequests: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1531,7 +1841,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Receive alerts when spare inventory is running low
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.lowStockAlerts ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, lowStockAlerts: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -1555,7 +1869,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Use a more compact layout for tables and lists
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.compactView ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, compactView: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1566,7 +1884,11 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Display all prices in Indian Rupees
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.showCurrencyAsINR ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, showCurrencyAsINR: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
                 <Separator />
 
@@ -1577,18 +1899,47 @@ export function Settings({ userRole, activeSection = "settings-user-management" 
                       Automatically refresh dashboard data every 5 minutes
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <Switch 
+                    checked={preferences.autoRefreshDashboard ?? true} 
+                    onCheckedChange={(checked) => setPreferences({...preferences, autoRefreshDashboard: checked})}
+                    disabled={isLoadingPreferences || isSavingPreferences}
+                  />
                 </div>
               </CardContent>
             </Card>
 
             <div className="flex justify-end gap-2 pb-4">
-              <Button variant="outline" className="h-8 text-xs">
-                Reset to Default
+              <Button 
+                variant="outline" 
+                className="h-8 text-xs"
+                onClick={handleResetPreferences}
+                disabled={isLoadingPreferences || isSavingPreferences}
+              >
+                {isSavingPreferences ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  'Reset to Default'
+                )}
               </Button>
-              <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs">
-                <Save className="w-3.5 h-3.5 mr-1.5" />
-                Save All Changes
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 h-8 text-xs"
+                onClick={handleSavePreferences}
+                disabled={isLoadingPreferences || isSavingPreferences}
+              >
+                {isSavingPreferences ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5 mr-1.5" />
+                    Save All Changes
+                  </>
+                )}
               </Button>
             </div>
           </div>

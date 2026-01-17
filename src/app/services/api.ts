@@ -917,6 +917,18 @@ class ApiService {
     return this.updateUser(id, { isActive: false });
   }
 
+  async changePassword(id: string, passwordData: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<any> {
+    const response = await this.request<any>(`/users/${id}/change-password`, {
+      method: 'POST',
+      body: JSON.stringify(passwordData),
+    });
+
+    return response.data!;
+  }
+
   // ========== Roles API ==========
   async getRoles(includeInactive = false): Promise<any[]> {
     const queryParams = new URLSearchParams();
@@ -1023,6 +1035,178 @@ class ApiService {
   async deleteDepartment(id: string): Promise<any> {
     const response = await this.request<any>(`/departments/${id}`, {
       method: 'DELETE',
+    });
+
+    return response.data!;
+  }
+
+  // ========== Part Number Configurations API ==========
+  async getPartNumberConfigs(): Promise<any[]> {
+    const response = await this.request<any>('/part-number-configs', {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async createPartNumberConfig(configData: {
+    prefix: string;
+    format: string;
+    autoIncrement?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>('/part-number-configs', {
+      method: 'POST',
+      body: JSON.stringify(configData),
+    });
+
+    return response.data!;
+  }
+
+  async updatePartNumberConfig(id: string, configData: {
+    prefix?: string;
+    format?: string;
+    autoIncrement?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>(`/part-number-configs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(configData),
+    });
+
+    return response.data!;
+  }
+
+  async deletePartNumberConfig(id: string): Promise<any> {
+    const response = await this.request<any>(`/part-number-configs/${id}`, {
+      method: 'DELETE',
+    });
+
+    return response.data!;
+  }
+
+  // ========== Tool Number Configurations API ==========
+  async getToolNumberConfigs(): Promise<any[]> {
+    const response = await this.request<any>('/tool-number-configs', {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async createToolNumberConfig(configData: {
+    prefix: string;
+    format: string;
+    autoIncrement?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>('/tool-number-configs', {
+      method: 'POST',
+      body: JSON.stringify(configData),
+    });
+
+    return response.data!;
+  }
+
+  async updateToolNumberConfig(id: string, configData: {
+    prefix?: string;
+    format?: string;
+    autoIncrement?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>(`/tool-number-configs/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(configData),
+    });
+
+    return response.data!;
+  }
+
+  async deleteToolNumberConfig(id: string): Promise<any> {
+    const response = await this.request<any>(`/tool-number-configs/${id}`, {
+      method: 'DELETE',
+    });
+
+    return response.data!;
+  }
+
+  // ========== BOM Items API ==========
+  async getBomItems(): Promise<any[]> {
+    const response = await this.request<any>('/bom-items', {
+      method: 'GET',
+    });
+
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async createBomItem(itemData: {
+    itemName: string;
+    category: string;
+    unit: string;
+    unitPrice: string;
+    supplier?: string;
+    partNumber?: string;
+    toolNumber?: string;
+  }): Promise<any> {
+    const response = await this.request<any>('/bom-items', {
+      method: 'POST',
+      body: JSON.stringify(itemData),
+    });
+
+    return response.data!;
+  }
+
+  async updateBomItem(id: string, itemData: {
+    itemName?: string;
+    category?: string;
+    unit?: string;
+    unitPrice?: string;
+    supplier?: string;
+    partNumber?: string;
+    toolNumber?: string;
+  }): Promise<any> {
+    const response = await this.request<any>(`/bom-items/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(itemData),
+    });
+
+    return response.data!;
+  }
+
+  async deleteBomItem(id: string): Promise<any> {
+    const response = await this.request<any>(`/bom-items/${id}`, {
+      method: 'DELETE',
+    });
+
+    return response.data!;
+  }
+
+  // ========== User Preferences API ==========
+  async getUserPreferences(): Promise<any> {
+    const response = await this.request<any>('/user-preferences', {
+      method: 'GET',
+    });
+
+    return response.data!;
+  }
+
+  async updateUserPreferences(preferences: {
+    emailNotifications?: boolean;
+    newPrCreation?: boolean;
+    quotationUpdates?: boolean;
+    approvalRequests?: boolean;
+    lowStockAlerts?: boolean;
+    compactView?: boolean;
+    showCurrencyAsINR?: boolean;
+    autoRefreshDashboard?: boolean;
+  }): Promise<any> {
+    const response = await this.request<any>('/user-preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+    });
+
+    return response.data!;
+  }
+
+  async resetUserPreferences(): Promise<any> {
+    const response = await this.request<any>('/user-preferences/reset', {
+      method: 'POST',
     });
 
     return response.data!;

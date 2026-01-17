@@ -148,6 +148,13 @@ model User {
   rolesUpdated          Role[]                @relation("RolesUpdated")
   departmentsCreated    Department[]          @relation("DepartmentsCreated")
   departmentsUpdated    Department[]          @relation("DepartmentsUpdated")
+  partNumberConfigsCreated PartNumberConfig[] @relation("PartNumberConfigsCreated")
+  partNumberConfigsUpdated PartNumberConfig[] @relation("PartNumberConfigsUpdated")
+  toolNumberConfigsCreated ToolNumberConfig[] @relation("ToolNumberConfigsCreated")
+  toolNumberConfigsUpdated ToolNumberConfig[] @relation("ToolNumberConfigsUpdated")
+  bomItemsCreated       BomItem[]             @relation("BomItemsCreated")
+  bomItemsUpdated       BomItem[]             @relation("BomItemsUpdated")
+  preferences           UserPreference?       @relation("UserPreferences")
 
   @@index([email])
   @@index([role])
@@ -194,6 +201,70 @@ model Department {
 
   @@index([name])
   @@map("departments")
+}
+
+// Part Number Configuration table
+model PartNumberConfig {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prefix       String   @db.VarChar(50)
+  format       String   @db.VarChar(100)
+  autoIncrement Boolean  @default(true) @map("auto_increment")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedBy    String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  creator       User?  @relation("PartNumberConfigsCreated", fields: [createdBy], references: [id])
+  updater       User?  @relation("PartNumberConfigsUpdated", fields: [updatedBy], references: [id])
+
+  @@index([prefix])
+  @@map("part_number_configs")
+}
+
+// Tool Number Configuration table
+model ToolNumberConfig {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prefix       String   @db.VarChar(50)
+  format       String   @db.VarChar(100)
+  autoIncrement Boolean  @default(true) @map("auto_increment")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?  @map("created_by") @db.Uuid
+  updatedBy    String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  creator       User?  @relation("ToolNumberConfigsCreated", fields: [createdBy], references: [id])
+  updater       User?  @relation("ToolNumberConfigsUpdated", fields: [updatedBy], references: [id])
+
+  @@index([prefix])
+  @@map("tool_number_configs")
+}
+
+// BOM Items table - Bill of Materials database
+model BomItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemName    String   @map("item_name") @db.VarChar(255)
+  category    String   @db.VarChar(100)
+  unit        String   @db.VarChar(50)
+  unitPrice   String   @map("unit_price") @db.VarChar(100)
+  supplier    String?  @db.VarChar(255)
+  partNumber  String?  @map("part_number") @db.VarChar(100)
+  toolNumber  String?  @map("tool_number") @db.VarChar(100)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by") @db.Uuid
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  creator       User?  @relation("BomItemsCreated", fields: [createdBy], references: [id])
+  updater       User?  @relation("BomItemsUpdated", fields: [updatedBy], references: [id])
+
+  @@index([itemName])
+  @@index([category])
+  @@index([partNumber])
+  @@index([toolNumber])
+  @@map("bom_items")
 }
 
 // Projects table
@@ -601,6 +672,30 @@ model Notification {
   @@index([createdAt])
   @@index([relatedEntityType, relatedEntityId])
   @@map("notifications")
+}
+
+// User Preferences table - Store user-specific preferences
+model UserPreference {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String   @unique @map("user_id") @db.Uuid
+  // Notification preferences
+  emailNotifications    Boolean  @default(true) @map("email_notifications")
+  newPrCreation         Boolean  @default(true) @map("new_pr_creation")
+  quotationUpdates      Boolean  @default(true) @map("quotation_updates")
+  approvalRequests      Boolean  @default(true) @map("approval_requests")
+  lowStockAlerts        Boolean  @default(true) @map("low_stock_alerts")
+  // Display preferences
+  compactView           Boolean  @default(true) @map("compact_view")
+  showCurrencyAsINR     Boolean  @default(true) @map("show_currency_as_inr")
+  autoRefreshDashboard  Boolean  @default(true) @map("auto_refresh_dashboard")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation("UserPreferences", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_preferences")
 }
 
 // Settings table

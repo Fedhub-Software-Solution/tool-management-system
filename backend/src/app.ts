@@ -19,6 +19,10 @@ import reportsRoutes from './routes/reports.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import rolesRoutes from './routes/roles.routes';
 import departmentsRoutes from './routes/departments.routes';
+import partNumberConfigRoutes from './routes/part-number-config.routes';
+import toolNumberConfigRoutes from './routes/tool-number-config.routes';
+import bomItemRoutes from './routes/bom-item.routes';
+import userPreferenceRoutes from './routes/user-preference.routes';
 import path from 'path';
 
 // Load environment variables
@@ -67,6 +71,10 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/departments', departmentsRoutes);
+app.use('/api/part-number-configs', partNumberConfigRoutes);
+app.use('/api/tool-number-configs', toolNumberConfigRoutes);
+app.use('/api/bom-items', bomItemRoutes);
+app.use('/api/user-preferences', userPreferenceRoutes);
 // etc.
 
 // 404 handler
