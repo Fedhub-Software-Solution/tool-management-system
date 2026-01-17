@@ -1,0 +1,601 @@
+// Prisma schema file for Tool Maintenance System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User roles enum
+enum UserRole {
+  Approver
+  NPD
+  Maintenance
+  Spares
+  Indentor
+}
+
+// Project status enum
+enum ProjectStatus {
+  Active
+  Completed
+  Cancelled
+  OnHold
+}
+
+// PR type enum
+enum PRType {
+  NewSet
+  Modification
+  Refurbished
+}
+
+// PR status enum
+enum PRStatus {
+  Submitted
+  Approved
+  SentToSupplier
+  EvaluationPending
+  SubmittedForApproval
+  Awarded
+  ItemsReceived
+  Rejected
+}
+
+// Supplier status enum
+enum SupplierStatus {
+  Active
+  Inactive
+  Blacklisted
+}
+
+// Quotation status enum
+enum QuotationStatus {
+  Pending
+  Evaluated
+  Selected
+  Rejected
+}
+
+// Handover status enum
+enum HandoverStatus {
+  PendingInspection
+  Approved
+  Rejected
+}
+
+// Inventory status enum
+enum InventoryStatus {
+  InStock
+  LowStock
+  OutOfStock
+}
+
+// Transaction type enum
+enum TransactionType {
+  Addition
+  Removal
+  Adjustment
+  Transfer
+}
+
+// Request status enum
+enum RequestStatus {
+  Pending
+  Fulfilled
+  PartiallyFulfilled
+  Rejected
+}
+
+// Notification type enum
+enum NotificationType {
+  Info
+  Success
+  Warning
+  Error
+}
+
+// PR Supplier status enum
+enum PRSupplierStatus {
+  Invited
+  Responded
+  Declined
+}
+
+// Users table
+model User {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  firstName    String    @map("first_name") @db.VarChar(100)
+  lastName     String    @map("last_name") @db.VarChar(100)
+  role         UserRole
+  employeeId   String?   @unique @map("employee_id") @db.VarChar(50)
+  phone        String?   @db.VarChar(20)
+  department   String?   @db.VarChar(100)
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy    String?   @map("created_by") @db.Uuid
+  updatedBy    String?   @map("updated_by") @db.Uuid
+
+  // Relations
+  projectsCreated       Project[]             @relation("ProjectsCreated")
+  projectsUpdated       Project[]             @relation("ProjectsUpdated")
+  prsCreated            PurchaseRequisition[] @relation("PRsCreated")
+  prsUpdated            PurchaseRequisition[] @relation("PRsUpdated")
+  prsApproved           PurchaseRequisition[] @relation("PRsApproved")
+  requestsRequested     SparesRequest[]       @relation("RequestsRequested")
+  requestsFulfilled     SparesRequest[]       @relation("RequestsFulfilled")
+  handoversInitiated    ToolHandover[]        @relation("HandoversInitiated")
+  handoversInspected    ToolHandover[]        @relation("HandoversInspected")
+  transactionsPerformed StockTransaction[]
+  notifications         Notification[]
+  settingsUpdated       Setting[]
+  auditLogs             AuditLog[]
+  suppliersCreated      Supplier[]
+  prSuppliersInvited    PRSupplier[]
+  quotationsSubmitted   Quotation[]           @relation("QuotationsSubmitted")
+  quotationsEvaluated   Quotation[]           @relation("QuotationsEvaluated")
+  usersCreated          User[]                @relation("UserCreated")
+  userCreatedBy         User?                 @relation("UserCreated", fields: [createdBy], references: [id])
+  usersUpdated          User[]                @relation("UserUpdated")
+  userUpdatedBy         User?                 @relation("UserUpdated", fields: [updatedBy], references: [id])
+
+  @@index([email])
+  @@index([role])
+  @@index([employeeId])
+  @@index([isActive])
+  @@map("users")
+}
+
+// Projects table
+model Project {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectNumber String        @unique @map("project_number") @db.VarChar(50)
+  customerPO    String        @map("customer_po") @db.VarChar(100)
+  partNumber    String        @map("part_number") @db.VarChar(100)
+  toolNumber    String        @map("tool_number") @db.VarChar(100)
+  price         Decimal       @db.Decimal(15, 2)
+  targetDate    DateTime      @map("target_date") @db.Date
+  status        ProjectStatus @default(Active)
+  description   String?       @db.Text
+  createdBy     String        @map("created_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy     String?       @map("updated_by") @db.Uuid
+
+  // Relations
+  creator              User                  @relation("ProjectsCreated", fields: [createdBy], references: [id])
+  updater              User?                 @relation("ProjectsUpdated", fields: [updatedBy], references: [id])
+  purchaseRequisitions PurchaseRequisition[]
+  handovers            ToolHandover[]
+  stockTransactions    StockTransaction[]
+  sparesRequests       SparesRequest[]
+
+  @@index([projectNumber])
+  @@index([status])
+  @@index([customerPO])
+  @@index([toolNumber])
+  @@index([createdBy])
+  @@index([targetDate])
+  @@map("projects")
+}
+
+// Purchase Requisitions table
+model PurchaseRequisition {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prNumber          String    @unique @map("pr_number") @db.VarChar(50)
+  projectId         String    @map("project_id") @db.Uuid
+  prType            PRType    @map("pr_type")
+  status            PRStatus  @default(Submitted)
+  modRefReason      String?   @map("mod_ref_reason") @db.Text
+  approverComments  String?   @map("approver_comments") @db.Text
+  awardedSupplierId String?   @map("awarded_supplier_id") @db.Uuid
+  itemsReceivedDate DateTime? @map("items_received_date") @db.Date
+  createdBy         String    @map("created_by") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy         String?   @map("updated_by") @db.Uuid
+  approvedAt        DateTime? @map("approved_at") @db.Timestamptz(6)
+  approvedBy        String?   @map("approved_by") @db.Uuid
+
+  // Relations
+  project         Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator         User            @relation("PRsCreated", fields: [createdBy], references: [id])
+  updater         User?           @relation("PRsUpdated", fields: [updatedBy], references: [id])
+  approver        User?           @relation("PRsApproved", fields: [approvedBy], references: [id])
+  awardedSupplier Supplier?       @relation(fields: [awardedSupplierId], references: [id])
+  prItems         PRItem[]
+  criticalSpares  CriticalSpare[]
+  prSuppliers     PRSupplier[]
+  quotations      Quotation[]
+  handovers       ToolHandover[]
+
+  @@index([prNumber])
+  @@index([projectId])
+  @@index([status])
+  @@index([createdBy])
+  @@index([prType])
+  @@index([awardedSupplierId])
+  @@index([createdAt])
+  @@map("purchase_requisitions")
+}
+
+// PR Items table
+model PRItem {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prId           String   @map("pr_id") @db.Uuid
+  itemCode       String?  @map("item_code") @db.VarChar(100)
+  name           String   @db.VarChar(255)
+  specification  String   @db.Text
+  quantity       Int
+  requirements   String?  @db.Text
+  bomUnitPrice   Decimal? @map("bom_unit_price") @db.Decimal(15, 2)
+  sequenceNumber Int?     @map("sequence_number")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  pr                PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  criticalSpares    CriticalSpare[]
+  quotationItems    QuotationItem[]
+  toolHandoverItems ToolHandoverItem[]
+
+  @@index([prId])
+  @@index([itemCode])
+  @@map("pr_items")
+}
+
+// Critical Spares table
+model CriticalSpare {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prId      String   @map("pr_id") @db.Uuid
+  prItemId  String   @map("pr_item_id") @db.Uuid
+  quantity  Int
+  notes     String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  pr     PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  prItem PRItem              @relation(fields: [prItemId], references: [id], onDelete: Cascade)
+
+  @@unique([prId, prItemId])
+  @@index([prId])
+  @@index([prItemId])
+  @@map("critical_spares")
+}
+
+// Suppliers table
+model Supplier {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierCode  String         @unique @map("supplier_code") @db.VarChar(50)
+  name          String         @db.VarChar(255)
+  contactPerson String?        @map("contact_person") @db.VarChar(255)
+  email         String?        @db.VarChar(255)
+  phone         String?        @db.VarChar(20)
+  address       String?        @db.Text
+  city          String?        @db.VarChar(100)
+  state         String?        @db.VarChar(100)
+  pincode       String?        @db.VarChar(20)
+  country       String?        @default("India") @db.VarChar(100)
+  gstin         String?        @db.VarChar(15)
+  status        SupplierStatus @default(Active)
+  rating        Decimal?       @db.Decimal(3, 2)
+  totalOrders   Int            @default(0) @map("total_orders")
+  notes         String?        @db.Text
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy     String?        @map("created_by") @db.Uuid
+
+  // Relations
+  creator     User?                 @relation(fields: [createdBy], references: [id])
+  categories  SupplierCategory[]
+  prSuppliers PRSupplier[]
+  quotations  Quotation[]
+  awardedPRs  PurchaseRequisition[]
+
+  @@index([supplierCode])
+  @@index([status])
+  @@index([name])
+  @@map("suppliers")
+}
+
+// Supplier Categories table
+model SupplierCategory {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  supplierId String   @map("supplier_id") @db.Uuid
+  category   String   @db.VarChar(100)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@unique([supplierId, category])
+  @@index([supplierId])
+  @@index([category])
+  @@map("supplier_categories")
+}
+
+// PR Suppliers table
+model PRSupplier {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prId       String           @map("pr_id") @db.Uuid
+  supplierId String           @map("supplier_id") @db.Uuid
+  invitedAt  DateTime         @default(now()) @map("invited_at") @db.Timestamptz(6)
+  invitedBy  String?          @map("invited_by") @db.Uuid
+  status     PRSupplierStatus @default(Invited)
+
+  // Relations
+  pr       PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  inviter  User?               @relation(fields: [invitedBy], references: [id])
+
+  @@unique([prId, supplierId])
+  @@index([prId])
+  @@index([supplierId])
+  @@map("pr_suppliers")
+}
+
+// Quotations table
+model Quotation {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationNumber  String          @unique @map("quotation_number") @db.VarChar(50)
+  prId             String          @map("pr_id") @db.Uuid
+  supplierId       String          @map("supplier_id") @db.Uuid
+  totalPrice       Decimal         @map("total_price") @db.Decimal(15, 2)
+  deliveryTerms    String?         @map("delivery_terms") @db.VarChar(100)
+  deliveryDate     DateTime?       @map("delivery_date") @db.Date
+  validityDate     DateTime?       @map("validity_date") @db.Date
+  status           QuotationStatus @default(Pending)
+  notes            String?         @db.Text
+  quotationFileUrl String?         @map("quotation_file_url") @db.Text
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  submittedBy      String?         @map("submitted_by") @db.Uuid
+  evaluatedAt      DateTime?       @map("evaluated_at") @db.Timestamptz(6)
+  evaluatedBy      String?         @map("evaluated_by") @db.Uuid
+
+  // Relations
+  pr             PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  supplier       Supplier            @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  submitter      User?               @relation("QuotationsSubmitted", fields: [submittedBy], references: [id])
+  evaluator      User?               @relation("QuotationsEvaluated", fields: [evaluatedBy], references: [id])
+  quotationItems QuotationItem[]
+
+  @@index([quotationNumber])
+  @@index([prId])
+  @@index([supplierId])
+  @@index([status])
+  @@map("quotations")
+}
+
+// Quotation Items table
+model QuotationItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  quotationId String   @map("quotation_id") @db.Uuid
+  prItemId    String   @map("pr_item_id") @db.Uuid
+  itemName    String   @map("item_name") @db.VarChar(255)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(15, 2)
+  quantity    Int
+  totalPrice  Decimal  @map("total_price") @db.Decimal(15, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  prItem    PRItem    @relation(fields: [prItemId], references: [id])
+
+  @@index([quotationId])
+  @@index([prItemId])
+  @@map("quotation_items")
+}
+
+// Tool Handovers table
+model ToolHandover {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  handoverNumber     String         @unique @map("handover_number") @db.VarChar(50)
+  projectId          String         @map("project_id") @db.Uuid
+  prId               String         @map("pr_id") @db.Uuid
+  toolSetDescription String         @map("tool_set_description") @db.Text
+  status             HandoverStatus @default(PendingInspection)
+  remarks            String?        @db.Text
+  initiatedBy        String         @map("initiated_by") @db.Uuid
+  initiatedAt        DateTime       @default(now()) @map("initiated_at") @db.Timestamptz(6)
+  inspectedBy        String?        @map("inspected_by") @db.Uuid
+  inspectionDate     DateTime?      @map("inspection_date") @db.Timestamptz(6)
+  completedAt        DateTime?      @map("completed_at") @db.Timestamptz(6)
+
+  // Relations
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pr            PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+  initiator     User                @relation("HandoversInitiated", fields: [initiatedBy], references: [id])
+  inspector     User?               @relation("HandoversInspected", fields: [inspectedBy], references: [id])
+  handoverItems ToolHandoverItem[]
+
+  @@index([handoverNumber])
+  @@index([projectId])
+  @@index([prId])
+  @@index([status])
+  @@index([initiatedBy])
+  @@map("tool_handovers")
+}
+
+// Tool Handover Items table
+model ToolHandoverItem {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  handoverId       String   @map("handover_id") @db.Uuid
+  prItemId         String   @map("pr_item_id") @db.Uuid
+  itemName         String   @map("item_name") @db.VarChar(255)
+  specification    String?  @db.Text
+  quantity         Int
+  requirements     String?  @db.Text
+  receivedQuantity Int      @map("received_quantity")
+  isCriticalSpare  Boolean  @default(false) @map("is_critical_spare")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  handover ToolHandover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+  prItem   PRItem       @relation(fields: [prItemId], references: [id])
+
+  @@index([handoverId])
+  @@index([prItemId])
+  @@map("tool_handover_items")
+}
+
+// Inventory Items table
+model InventoryItem {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  partNumber            String          @map("part_number") @db.VarChar(100)
+  toolNumber            String          @map("tool_number") @db.VarChar(100)
+  itemCode              String?         @map("item_code") @db.VarChar(100)
+  name                  String          @db.VarChar(255)
+  currentStock          Int             @default(0) @map("current_stock")
+  minStockLevel         Int             @default(0) @map("min_stock_level")
+  maxStockLevel         Int?            @map("max_stock_level")
+  unitOfMeasure         String          @default("PCS") @map("unit_of_measure") @db.VarChar(50)
+  status                InventoryStatus @default(InStock)
+  location              String?         @db.VarChar(100)
+  lastRestockedAt       DateTime?       @map("last_restocked_at") @db.Timestamptz(6)
+  lastRestockedQuantity Int?            @map("last_restocked_quantity")
+  notes                 String?         @db.Text
+  createdAt             DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Relations
+  stockTransactions StockTransaction[]
+  sparesRequests    SparesRequest[]
+
+  @@unique([partNumber, toolNumber, itemCode])
+  @@index([partNumber])
+  @@index([toolNumber])
+  @@index([status])
+  @@index([itemCode])
+  @@map("inventory_items")
+}
+
+// Stock Transactions table
+model StockTransaction {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  inventoryItemId String          @map("inventory_item_id") @db.Uuid
+  transactionType TransactionType @map("transaction_type")
+  quantity        Int
+  balanceAfter    Int             @map("balance_after")
+  referenceType   String?         @map("reference_type") @db.VarChar(50)
+  referenceId     String?         @map("reference_id") @db.Uuid
+  prNumber        String?         @map("pr_number") @db.VarChar(50)
+  projectId       String?         @map("project_id") @db.Uuid
+  purpose         String?         @db.Text
+  performedBy     String          @map("performed_by") @db.Uuid
+  transactionDate DateTime        @default(now()) @map("transaction_date") @db.Timestamptz(6)
+  notes           String?         @db.Text
+
+  // Relations
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  project       Project?      @relation(fields: [projectId], references: [id])
+  performer     User          @relation(fields: [performedBy], references: [id])
+
+  @@index([inventoryItemId])
+  @@index([transactionType])
+  @@index([transactionDate])
+  @@index([referenceType, referenceId])
+  @@map("stock_transactions")
+}
+
+// Spares Requests table
+model SparesRequest {
+  id                String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  requestNumber     String        @unique @map("request_number") @db.VarChar(50)
+  requestedBy       String        @map("requested_by") @db.Uuid
+  inventoryItemId   String        @map("inventory_item_id") @db.Uuid
+  itemName          String        @map("item_name") @db.VarChar(255)
+  partNumber        String        @map("part_number") @db.VarChar(100)
+  toolNumber        String        @map("tool_number") @db.VarChar(100)
+  quantityRequested Int           @map("quantity_requested")
+  quantityFulfilled Int           @default(0) @map("quantity_fulfilled")
+  status            RequestStatus @default(Pending)
+  requestDate       DateTime      @default(now()) @map("request_date") @db.Timestamptz(6)
+  projectId         String?       @map("project_id") @db.Uuid
+  purpose           String?       @db.Text
+  fulfilledAt       DateTime?     @map("fulfilled_at") @db.Timestamptz(6)
+  fulfilledBy       String?       @map("fulfilled_by") @db.Uuid
+  rejectionReason   String?       @map("rejection_reason") @db.Text
+
+  // Relations
+  requester     User          @relation("RequestsRequested", fields: [requestedBy], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  project       Project?      @relation(fields: [projectId], references: [id])
+  fulfiller     User?         @relation("RequestsFulfilled", fields: [fulfilledBy], references: [id])
+
+  @@index([requestNumber])
+  @@index([requestedBy])
+  @@index([inventoryItemId])
+  @@index([status])
+  @@index([requestDate])
+  @@map("spares_requests")
+}
+
+// Notifications table
+model Notification {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String           @map("user_id") @db.Uuid
+  title             String           @db.VarChar(255)
+  message           String           @db.Text
+  type              NotificationType
+  relatedEntityType String?          @map("related_entity_type") @db.VarChar(50)
+  relatedEntityId   String?          @map("related_entity_id") @db.Uuid
+  isRead            Boolean          @default(false) @map("is_read")
+  readAt            DateTime?        @map("read_at") @db.Timestamptz(6)
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+  @@index([relatedEntityType, relatedEntityId])
+  @@map("notifications")
+}
+
+// Settings table
+model Setting {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String   @unique @db.VarChar(100)
+  value       String?  @db.Text
+  category    String?  @db.VarChar(50)
+  description String?  @db.Text
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy   String?  @map("updated_by") @db.Uuid
+
+  // Relations
+  updater User? @relation(fields: [updatedBy], references: [id])
+
+  @@index([key])
+  @@index([category])
+  @@map("settings")
+}
+
+// Audit Logs table
+model AuditLog {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  entityType String   @map("entity_type") @db.VarChar(50)
+  entityId   String   @map("entity_id") @db.Uuid
+  oldValues  Json?    @map("old_values")
+  newValues  Json?    @map("new_values")
+  ipAddress  String?  @map("ip_address") @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}

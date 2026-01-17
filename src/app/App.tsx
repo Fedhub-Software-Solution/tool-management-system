@@ -1,12 +1,15 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
 import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./components/ui/select";
 import { Dashboard } from "./components/Dashboard";
 import { LeftNav } from "./components/LeftNav";
 import { ProfileDialog } from "./components/ProfileDialog";
 import type { Project, PR, ToolHandoverRecord, InventoryItem, SparesRequest, Supplier } from "./components/Dashboard";
 import { UserCircle, Building2, Sparkles, Settings, Bell, LogOut } from "lucide-react";
+import { apiService } from "./services/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +27,10 @@ function App() {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [activeTab, setActiveTab] = useState<string>("dashboard");
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Shared state across all roles with comprehensive static data
   const [projects, setProjects] = useState<Project[]>([
@@ -1251,6 +1258,32 @@ function App() {
   const handleSwitchRole = () => {
     setSelectedRole(null);
     setActiveTab("dashboard");
+    setEmail("");
+    setPassword("");
+    setError(null);
+    apiService.logout();
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setIsLoading(true);
+
+    try {
+      const response = await apiService.login(email, password);
+      // Map API role to UserRole type
+      const userRole = response.user.role as UserRole;
+      setSelectedRole(userRole);
+      setActiveTab("dashboard");
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message || "Invalid email or password. Please try again.");
+      } else {
+        setError("An unexpected error occurred. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (!selectedRole) {
@@ -1277,101 +1310,56 @@ function App() {
               </p>
             </div>
           </CardHeader>
-          <CardContent className="space-y-8 pb-10">
-            <div className="space-y-3">
-              <label className="text-sm font-semibold flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                Select Your Role
-              </label>
-              <Select onValueChange={(value) => setSelectedRole(value as UserRole)}>
-                <SelectTrigger className="w-full h-12 border-2 hover:border-indigo-300 transition-colors">
-                  <SelectValue placeholder="Choose your role..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Approver">
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                        <UserCircle className="w-4 h-4 text-purple-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Approver Team</p>
-                        <p className="text-xs text-muted-foreground">Project & PR Approval</p>
-                      </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="NPD">
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                        <UserCircle className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium">NPD Team</p>
-                        <p className="text-xs text-muted-foreground">PR & Quotation Management</p>
-                      </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Maintenance">
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="w-8 h-8 rounded-full bg-cyan-100 flex items-center justify-center">
-                        <UserCircle className="w-4 h-4 text-cyan-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Tool Maintenance Team</p>
-                        <p className="text-xs text-muted-foreground">Tool Handover Inspection</p>
-                      </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Spares">
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="w-8 h-8 rounded-full bg-teal-100 flex items-center justify-center">
-                        <UserCircle className="w-4 h-4 text-teal-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Spares Team</p>
-                        <p className="text-xs text-muted-foreground">Inventory Management</p>
-                      </div>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Indentor">
-                    <div className="flex items-center gap-3 py-1">
-                      <div className="w-8 h-8 rounded-full bg-rose-100 flex items-center justify-center">
-                        <UserCircle className="w-4 h-4 text-rose-600" />
-                      </div>
-                      <div>
-                        <p className="font-medium">Indentor</p>
-                        <p className="text-xs text-muted-foreground">Request Production Spares</p>
-                      </div>
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          <CardContent className="space-y-6 pb-10">
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  Email Address
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full h-12 border-2 hover:border-indigo-300 transition-colors"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
 
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-xl border border-indigo-100 space-y-4">
-              <p className="text-sm font-semibold text-indigo-900">Role Capabilities</p>
-              <ul className="text-sm space-y-2.5">
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-purple-500 mt-1.5" />
-                  <span><strong className="text-purple-700">Approver:</strong> <span className="text-slate-600">Create projects, approve/reject PRs</span></span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5" />
-                  <span><strong className="text-blue-700">NPD:</strong> <span className="text-slate-600">Create PRs, manage quotations, award suppliers</span></span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-1.5" />
-                  <span><strong className="text-cyan-700">Maintenance:</strong> <span className="text-slate-600">Inspect and approve tool handovers</span></span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-teal-500 mt-1.5" />
-                  <span><strong className="text-teal-700">Spares:</strong> <span className="text-slate-600">Manage inventory, fulfill requests, raise reorder PRs</span></span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5" />
-                  <span><strong className="text-rose-700">Indentor:</strong> <span className="text-slate-600">Request spares for production</span></span>
-                </li>
-              </ul>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-semibold flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  Password
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full h-12 border-2 hover:border-indigo-300 transition-colors"
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <Button
+                type="submit"
+                className="w-full h-12 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold text-base"
+                disabled={isLoading}
+              >
+                {isLoading ? "Signing in..." : "Sign In"}
+              </Button>
+            </form>
 
             <div className="text-center pt-2">
               <p className="text-sm text-slate-500 flex items-center justify-center gap-2">
